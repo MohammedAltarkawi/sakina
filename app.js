@@ -1,7 +1,7 @@
 'use strict';
 /* Sakina – App-Logik */
 
-const APP_VERSION = 'v2 · Test-Deploy 20.11. 22:00';
+const APP_VERSION = 'v3 · Health-Import';
 
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -163,12 +163,56 @@ function weekBar() {
 function renderBewegung() {
   let h = `<section class="card"><h3>Worauf haben wir heute Lust?</h3><div class="tiles">${MOVES.map(m =>
     `<button class="tile ${S.move === m.k ? 'on' : ''}" data-act="move" data-k="${m.k}" aria-pressed="${S.move === m.k}"><span class="tile-e">${m.e}</span><span>${m.n}</span>${doneOn(m.k, today()) ? '<span class="tick" aria-label="heute erledigt">✓</span>' : ''}</button>`).join('')}</div>${weekBar()}</section>`;
+  h += healthCard();
   if (S.move) {
     const view = { gym: gymView, home: homeView, jog: jogView, box: () => simpleView('box'), swim: () => simpleView('swim'), relax: () => simpleView('relax') }[S.move];
     h += `<section class="card" id="plan">${view()}<p class="ortho">⚠️ ${ORTHO_HINT}</p></section>`;
   }
   h += weighView() + reviewView() + importView();
   return h;
+}
+
+
+/* ---------- Gesundheitsdaten vom iPhone (über Kurzbefehl + Zwischenablage) ---------- */
+function parseHealth(text) {
+  const t = String(text || '');
+  if (!/sakina|schritte|steps/i.test(t)) throw new Error('In der Zwischenablage stehen keine Sakina-Daten. Erst den Kurzbefehl ausführen.');
+  const get = re => { const m = t.match(re); return m ? m[1].trim() : null; };
+  const toNum = v => { if (v == null || v === '') return null; let x = String(v).replace(/\s/g, '');
+    if (/^\d{1,3}(\.\d{3})+$/.test(x)) x = x.replace(/\./g, ''); // 8.432 → 8432
+    return num(x.replace(/[^\d.,-]/g, '')); };
+  const date = toISO(get(/(?:datum|date)\s*[=:]\s*([^\n;|]+)/i)) || today();
+  const steps = toNum(get(/(?:schritte|steps)\s*[=:]\s*([^\n;|]+)/i));
+  let sleep = toNum(get(/(?:schlaf|sleep)\s*[=:]\s*([^\n;|]+)/i));
+  if (sleep != null && sleep > 24) sleep = sleep > 1440 ? sleep / 3600 : sleep / 60; // Sekunden oder Minuten → Stunden
+  const rhr = toNum(get(/(?:ruhepuls|rhr|puls)\s*[=:]\s*([^\n;|]+)/i));
+  const out = { date };
+  if (steps != null && steps >= 0 && steps < 200000) out.steps = Math.round(steps);
+  if (sleep != null && sleep > 0 && sleep <= 16) out.sleepH = Math.round(sleep * 10) / 10;
+  if (rhr != null && rhr > 25 && rhr < 150) out.rhr = Math.round(rhr);
+  if (out.steps == null && out.sleepH == null && out.rhr == null) throw new Error('Keine Werte gefunden. Prüf den Text im Kurzbefehl.');
+  return out;
+}
+function saveHealth(hd) {
+  const doc = dayDoc(hd.date);
+  doc.health = Object.assign({}, doc.health, hd, { ts: Date.now() });
+  delete doc.health.date;
+  saveDay(doc, hd.date);
+  const parts = [hd.steps != null && `${hd.steps.toLocaleString('de-DE')} Schritte`, hd.sleepH != null && `${fmtNum(hd.sleepH)} h Schlaf`, hd.rhr != null && `Ruhepuls ${hd.rhr}`].filter(Boolean);
+  toast(`📲 Übernommen${hd.date !== today() ? ' für ' + fmtShort(hd.date) : ''}: ${parts.join(' · ')}`);
+}
+const fmtSleep = h => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${pad(m % 60)} min`; };
+function healthCard() {
+  const t = today(), hd = dayDoc(t).health, y = dayDoc(addDays(t, -1)).health;
+  const val = (v, f) => v != null ? f(v) : '–';
+  return `<section class="card health"><h3>📲 Vom Handy</h3>
+    <div class="kacheln"><div><b>${val(hd?.steps, v => v.toLocaleString('de-DE'))}</b><span>Schritte heute</span></div>
+    <div><b>${val(hd?.sleepH ?? y?.sleepH, v => fmtNum(v) + ' h')}</b><span>Schlaf${hd?.sleepH == null && y?.sleepH != null ? ' (gestern)' : ''}</span></div>
+    <div><b>${val(hd?.rhr, v => v)}</b><span>Ruhepuls</span></div></div>
+    <button class="btn primary wide" data-act="healthPaste">Gesundheitsdaten einfügen</button>
+    ${hd?.ts ? `<p class="small muted center">Zuletzt aktualisiert um ${new Date(hd.ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</p>` : '<p class="small muted center">Erst den Kurzbefehl „Sakina Sync“ ausführen, dann hier tippen.</p>'}
+    ${S.healthManual ? `<label class="lbl">Klappt das Einfügen nicht? Hier lang drücken → „Einsetzen“:<textarea id="healthText" rows="3" placeholder="SAKINA&#10;schritte=8432&#10;schlaf=7,3&#10;ruhepuls=58"></textarea></label><button class="btn small" data-act="healthManual">Übernehmen</button>` : ''}
+  </section>`;
 }
 
 /* ---------- Gym ---------- */
@@ -391,6 +435,9 @@ function reviewView() {
 
   const actDays = ds.map(d => acts(d).filter(isDone));
   const counts = {}; actDays.flat().forEach(x => counts[x.type] = (counts[x.type] || 0) + 1);
+  const hs = docs.map(x => x?.health).filter(Boolean);
+  const stepsA = avg(hs.map(x => x.steps).filter(v => v != null)), sleepA = avg(hs.map(x => x.sleepH).filter(v => v != null));
+  if (stepsA != null || sleepA != null) h += `<div class="kacheln two"><div><b>${stepsA != null ? Math.round(stepsA).toLocaleString('de-DE') : '–'}</b><span>Ø Schritte am Tag</span></div><div><b>${sleepA != null ? fmtSleep(sleepA) : '–'}</b><span>Ø Schlaf</span></div></div>`;
   h += `<h4>Bewegung</h4><p><b>${actDays.filter(a => a.length).length}</b> aktive Tage</p>
     <div class="counts">${MOVES.filter(mv => counts[mv.k]).map(mv => `<span>${mv.e} ${mv.n}: <b>${counts[mv.k]}</b></span>`).join('') || '<span class="muted">Noch nichts in diesem Monat.</span>'}</div>
     <div class="cal">${WD.map(w => `<span class="cal-h">${w}</span>`).join('')}${'<span></span>'.repeat(dow(ds[0]))}${ds.map((d, i) =>
@@ -838,6 +885,19 @@ const ACT = {
   knee(b) { const it = getAct('jog'), v = b.dataset.v; setAct('jog', { knee: it.knee === v ? null : v }); render(); },
   saveWeight() { const v = num($('#wkg').value); if (!v || v < 30 || v > 300) { toast('Bitte das Gewicht in kg eingeben, z. B. 92,4'); return; } db.set('w_' + today(), { kg: v }); render(); toast('Eingetragen'); },
   month(b) { const m = +b.dataset.v < 0 ? prevMonth(S.month) : nextMonth(S.month); if (m > today().slice(0, 7)) return; S.month = m; render(); },
+  async healthPaste() {
+    try {
+      if (!navigator.clipboard?.readText) throw new Error('nope');
+      saveHealth(parseHealth(await navigator.clipboard.readText()));
+      S.healthManual = false; render();
+    } catch (e) {
+      if (e.message !== 'nope' && !/denied|allowed|permission|NotAllowed/i.test(e.message + e.name)) { toast(e.message); return; }
+      S.healthManual = true; render();
+    }
+  },
+  healthManual() {
+    try { saveHealth(parseHealth($('#healthText').value)); S.healthManual = false; render(); } catch (e) { toast(e.message); }
+  },
   runImport() {
     const out = $('#importResult');
     try {
@@ -915,7 +975,6 @@ function init() {
     else if (S.day !== today()) render();
   });
 
-  $('#testBanner').textContent = '🚀 Neue Version ist da: ' + APP_VERSION;
   render(false);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }

@@ -261,5 +261,5 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .circle { transition-duration: 0s !important; } }
 
-/* Test-Deploy-Hinweis */
-.test-banner { background: #FF4FA3; color: #fff; font-weight: 800; text-align: center; border-radius: 14px; padding: 10px 12px; margin: 4px 0 8px; }
+.kacheln.two { grid-template-columns: 1fr 1fr; }
+.health .kacheln { margin-top: 4px; }
