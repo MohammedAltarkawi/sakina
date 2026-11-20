@@ -1,6 +1,8 @@
 'use strict';
 /* Sakina – App-Logik */
 
+const APP_VERSION = 'v2 · Test-Deploy 20.11. 22:00';
+
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -756,7 +758,7 @@ function openSettings() {
     <p id="sTest" class="small" aria-live="polite"></p>
     <h4>Backup</h4><p class="small muted">Alle Einträge als Datei sichern oder wiederherstellen.</p>
     <div class="row"><button class="btn" data-g="export">Backup exportieren</button><label class="btn file-btn">Backup importieren<input type="file" id="sImport" accept="application/json,.json" hidden></label></div>
-    <p class="small muted center">Sakina · alle Daten bleiben privat auf diesem Gerät.</p></div>`;
+    <p class="small muted center">Sakina ${APP_VERSION} · alle Daten bleiben privat auf diesem Gerät.</p></div>`;
   $('#sTheme').value = s.theme; $('#sProv').value = s.provider;
   const sync = () => { const p = $('#sProv').value; $('#sBaseWrap').hidden = p !== 'compatible'; $('#sModel').placeholder = DEFAULT_MODEL[p] || 'Modellname'; };
   $('#sProv').addEventListener('change', sync); sync();
@@ -913,6 +915,7 @@ function init() {
     else if (S.day !== today()) render();
   });
 
+  $('#testBanner').textContent = '🚀 Neue Version ist da: ' + APP_VERSION;
   render(false);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }

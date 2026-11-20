@@ -1,5 +1,5 @@
 /* Sakina – Service Worker (offline) */
-const VERSION = 'sakina-v2';
+const VERSION = 'sakina-v3';
 const CORE = ['./', './index.html', './style.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
