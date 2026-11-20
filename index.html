@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sakina</title>
+  <meta name="description" content="Wohlfühl- und Alltags-App">
+  <meta name="theme-color" content="#1F6B45">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Sakina">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito:wght@400;600;700;800&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try {
+      var t = (JSON.parse(localStorage.getItem('gt_settings') || '{}').theme) || 'auto';
+      var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <header class="top">
+    <span class="brand">Sakina</span>
+    <button id="btnSettings" class="icon-btn" aria-label="Einstellungen">⚙️</button>
+  </header>
+
+  <main id="view" aria-live="off"></main>
+
+  <nav class="tabbar" role="tablist" aria-label="Bereiche">
+    <button role="tab" data-tab="heute"><span aria-hidden="true">☀️</span>Heute</button>
+    <button role="tab" data-tab="bewegung"><span aria-hidden="true">🤸</span>Bewegung</button>
+    <button role="tab" data-tab="wissen"><span aria-hidden="true">🧠</span>Wissen</button>
+    <button role="tab" data-tab="meal"><span aria-hidden="true">🍲</span>Meal Prep</button>
+  </nav>
+
+  <div id="overlay" hidden></div>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
