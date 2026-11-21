@@ -75,7 +75,7 @@ Das Skript richtet ein:
 - `sakina.service`: der Server (`server/sakina_server.py`) auf `127.0.0.1:8787`, startet automatisch
 - `sakina-update.timer`: holt alle 2 Minuten Neues von GitHub (`deploy/update.sh`)
 - `sakina-job-plan/analysis/exercises.timer`: Claude-Jobs (Fr, So, monatlich)
-- `tailscale serve`: HTTPS nach außen, nur im eigenen Tailnet
+- `tailscale serve`: HTTPS nur im eigenen Tailnet, auf **Port 8443** (`https://deine-kiste.….ts.net:8443`). Andere Dienste auf 443, z. B. Open WebUI, bleiben unangetastet. Anderer Port: `SAKINA_HTTPS_PORT=9443 ./deploy/install.sh`
 - `/etc/sakina.env`: Einstellungen (Port, Datenordner, optional Token)
 
 ### 5. Aufs iPhone

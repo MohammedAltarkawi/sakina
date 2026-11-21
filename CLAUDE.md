@@ -98,7 +98,7 @@ Vorgeschichte: Meniskus (Knie), Bandscheibe (Rücken), aktuell Schulterbeschwerd
 5. Commit auf `main` und pushen. Der Server holt es innerhalb von 2 Minuten (`sakina-update.timer`). Auf dem iPhone die App 1–2× schließen und neu öffnen.
 
 ## Server-Hinweise
-- Läuft hinter `tailscale serve` auf `127.0.0.1:8787`. **Nicht** öffentlich machen (kein Tailscale Funnel), ohne vorher `SAKINA_TOKEN` zu setzen.
+- Läuft hinter `tailscale serve --https=8443` auf `127.0.0.1:8787`. Port 443 gehört Open WebUI, nie überschreiben. **Nicht** öffentlich machen (kein Tailscale Funnel), ohne vorher `SAKINA_TOKEN` zu setzen.
 - Statische Auslieferung nur per Whitelist (Endungen + Ordner `""`/`fonts`). Neue Ordner mit App-Dateien in `STATIC_DIRS` eintragen.
 - Backups: `SAKINA_DATA/backups/sakina-<Zeit>.json`, Rechte 600, die neuesten `SAKINA_KEEP` (90) bleiben. `apiKey` wird serverseitig zusätzlich entfernt.
 - Ändert sich etwas in `server/`, startet `deploy/update.sh` den Dienst neu.

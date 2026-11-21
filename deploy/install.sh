@@ -14,6 +14,8 @@ CLAUDE_BIN="$(sudo -u "$RUN_USER" bash -lc 'command -v claude' 2>/dev/null || tr
 [ -z "$CLAUDE_BIN" ] && [ -x "$RUN_HOME/.local/bin/claude" ] && CLAUDE_BIN="$RUN_HOME/.local/bin/claude"
 DATA_DIR="${SAKINA_DATA:-/var/lib/sakina}"
 PORT="${SAKINA_PORT:-8787}"
+# Eigener HTTPS-Port, damit andere Dienste auf 443 (z. B. Open WebUI) unangetastet bleiben
+HTTPS_PORT="${SAKINA_HTTPS_PORT:-8443}"
 
 say() { printf '\n\033[1;32m▶ %s\033[0m\n' "$*"; }
 need() { command -v "$1" >/dev/null || { echo "Fehlt: $1  →  $2"; exit 1; }; }
@@ -146,8 +148,12 @@ curl -fsS "http://127.0.0.1:$PORT/api/health" && echo
 
 if command -v tailscale >/dev/null; then
   say "HTTPS über Tailscale"
-  sudo tailscale serve --bg "$PORT" || echo "Tipp: In der Tailscale-Admin-Konsole unter DNS 'HTTPS Certificates' aktivieren und nochmal starten."
+  say "HTTPS über Tailscale auf Port $HTTPS_PORT (443 und alles andere bleibt, wie es ist)"
+  sudo tailscale serve --bg --https="$HTTPS_PORT" "http://127.0.0.1:$PORT" \
+    || echo "Tipp: In der Tailscale-Admin-Konsole unter DNS 'HTTPS Certificates' aktivieren und nochmal starten."
   tailscale serve status || true
+  HOST="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null || true)"
+  [ -n "$HOST" ] && echo "👉 Sakina: https://$HOST:$HTTPS_PORT"
 else
   echo "Tailscale nicht gefunden. Installieren: curl -fsSL https://tailscale.com/install.sh | sh"
 fi
