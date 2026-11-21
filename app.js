@@ -1,7 +1,7 @@
 'use strict';
 /* Sakina – App-Logik */
 
-const APP_VERSION = 'v4 · Selbsthosten';
+const APP_VERSION = 'v5 · Datenbank & Claude';
 
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -29,7 +29,7 @@ const pickN = (arr, n, seed) => arr.map((x, i) => [hash(seed + '|' + i), x]).sor
 const P = 'gt_';
 const db = {
   get(k, def = null) { try { const v = localStorage.getItem(P + k); return v == null ? def : JSON.parse(v); } catch { return def; } },
-  set(k, v) { localStorage.setItem(P + k, JSON.stringify(v)); },
+  set(k, v) { localStorage.setItem(P + k, JSON.stringify(v)); if (typeof markDirty === 'function') markDirty(k); },
   del(k) { localStorage.removeItem(P + k); },
   keys(prefix = '') {
     const out = [];
@@ -63,7 +63,7 @@ function later(key, fn, ms = 500) {
 function flushAll() { for (const [k, p] of [...pending]) { clearTimeout(p.t); pending.delete(k); p.fn(); } }
 
 /* ---------- Zustand ---------- */
-const S = { tab: 'heute', move: null, gymUnit: null, month: today().slice(0, 7), factTopic: null, openCalm: null, loadingFact: false, loadingPlan: false, day: today() };
+const S = { tab: 'heute', move: null, gymUnit: null, month: today().slice(0, 7), factTopic: null, openCalm: null, loadingFact: false, loadingPlan: false, day: today(), jobs: {} };
 
 /* ---------- Theme ---------- */
 function applyTheme() {
@@ -169,7 +169,7 @@ function renderBewegung() {
     const view = { gym: gymView, home: homeView, jog: jogView, box: () => simpleView('box'), swim: () => simpleView('swim'), relax: () => simpleView('relax') }[S.move];
     h += `<section class="card" id="plan">${view()}<p class="ortho">⚠️ ${ORTHO_HINT}</p></section>`;
   }
-  h += weighView() + reviewView() + importView();
+  h += analysisCard() + proposalsCard() + weighView() + reviewView() + importView();
   return h;
 }
 
@@ -293,7 +293,7 @@ function exBlock(id, item, notes) {
   const sp = exSpec(id); const F = FIELDS[sp.kind];
   const last = lastSets(id, sp.stage); const cur = (item.sets || {})[id] || [];
   const target = `${sp.sets}× ${sp.lo === sp.hi ? sp.lo : sp.lo + '–' + sp.hi}${F.unit ? ' ' + F.unit : ''}${sp.side ? ' ' + (sp.sideWord || 'pro Seite') : ''}`;
-  let h = `<div class="ex" data-ex="${id}"><div class="ex-head"><h4>${esc(sp.name)}</h4><span class="target">${target}</span></div>`;
+  let h = `<div class="ex" data-ex="${id}"><div class="ex-head"><h4>${esc(sp.name)}${sp.byClaude ? ' <span class="badge-new">✨ neu</span>' : ''}</h4><span class="target">${target}</span></div>`;
   if (sp.ladder) {
     const L = LADDERS[sp.ladder];
     h += `<div class="ladder" role="group" aria-label="Stufe wählen">${L.stages.map((s, i) =>
@@ -598,6 +598,10 @@ async function newFact(topic) {
   const d = today(), doc = db.get('k_' + d, { facts: [] });
   if (doc.facts.length >= 5 || S.loadingFact) return;
   S.loadingFact = true; render();
+  if (serverHasClaude()) {
+    const ok = await runServerJob('fact', { topic });
+    if (ok && (db.get('k_' + d, { facts: [] }).facts.length > doc.facts.length)) { S.loadingFact = false; render(); return; }
+  }
   let fact;
   if (hasAI()) {
     try { fact = { ...(await aiFact(topic)), topic, ai: true }; }
@@ -702,9 +706,10 @@ function renderMeal() {
   h += `<section class="card"><h3>Nächster Wochenplan</h3>
     <label class="lbl">Was hast du noch zuhause?<textarea data-inp="pantry" rows="2" placeholder="z. B. halbe Packung Nudeln, 2 Dosen Kichererbsen">${esc(db.get('pantry', '') || '')}</textarea></label>
     <label class="lbl">Worauf hast du Lust?<textarea data-inp="wish" rows="2" placeholder="z. B. was mit Kartoffeln, gern orientalisch">${esc(db.get('wish', '') || '')}</textarea></label>
-    <button class="btn primary wide" data-act="newPlan" ${S.loadingPlan ? 'disabled' : ''}>${S.loadingPlan ? 'Plan wird gekocht … 🍲' : 'Neuen Wochenplan erstellen'}</button>
-    <p class="small muted">${hasAI() ? 'Freitag bis Sonntag erstellt, gilt der Plan für die kommende Woche.' : 'Dafür brauchst du einen KI-Schlüssel (⚙️). Bis dahin gilt der Startplan.'}</p></section>`;
+    <button class="btn primary wide" data-act="newPlan" ${S.loadingPlan || S.jobs.plan ? 'disabled' : ''}>${S.loadingPlan || S.jobs.plan ? 'Plan wird gekocht … 🍲 (bis zu 2 Min)' : 'Neuen Wochenplan erstellen'}</button>
+    <p class="small muted">${serverHasClaude() ? 'Claude auf deinem Server plant mit deinem Verlauf, Vorrat und Lieblingsgerichten. Freitags kommt automatisch ein neuer Plan.' : hasAI() ? 'Freitag bis Sonntag erstellt, gilt der Plan für die kommende Woche.' : 'Dafür brauchst du einen KI-Schlüssel (⚙️). Bis dahin gilt der Startplan.'}</p></section>`;
 
+  h += planHistoryCard();
   h += `<section class="card"><h3>Lieblingsgerichte ★</h3>${favs.length ? `<ul class="favs">${favs.map(f =>
     `<li><span>★ ${esc(f)}</span><button class="x" data-act="favDel" data-n="${esc(f)}" aria-label="${esc(f)} entfernen">✕</button></li>`).join('')}</ul><p class="small muted">Fließen ab und zu in neue Pläne ein.</p>` : '<p class="muted">Tipp auf ☆ bei Mittag oder Abend, um ein Gericht zu merken.</p>'}</section>`;
   return h;
@@ -724,6 +729,7 @@ function normalizePlan(j) {
   };
 }
 async function generatePlan() {
+  if (serverHasClaude()) { flushAll(); await runServerJob('plan'); return; }
   if (!hasAI()) { toast('Für neue Pläne brauchst du einen KI-Schlüssel.'); openSettings(); return; }
   flushAll();
   const t = today(), validFrom = dow(t) >= 4 ? addDays(mondayOf(t), 7) : mondayOf(t);
@@ -804,6 +810,10 @@ function openSettings() {
     <label class="lbl">Modell<input id="sModel" type="text" value="${esc(s.model)}" placeholder=""></label>
     <div class="row"><button class="btn primary" data-g="saveSettings">Speichern</button><button class="btn" data-g="test">Verbindung testen</button></div>
     <p id="sTest" class="small" aria-live="polite"></p>
+    <h4>Datenbank auf deinem Server</h4>
+    <p class="small muted">Alles wird zuerst auf dem Handy gespeichert und abgeglichen, sobald dein Server erreichbar ist. Übungen, Pläne und Gerichte kommen aus der Datenbank.</p>
+    <p id="syncStatus" class="small" aria-live="polite">${esc(syncStatusText())}</p>
+    <div class="row"><button class="btn" data-g="syncNow">Jetzt synchronisieren</button></div>
     <h4>Sicherung auf deinem Server</h4>
     <p class="small muted">Läuft Sakina auf deinem eigenen Server, sichert die App deine Einträge automatisch dorthin (beim Öffnen, höchstens alle 30 Minuten). Nichts geht an fremde Server.</p>
     <p id="srvStatus" class="small" aria-live="polite">${esc(serverStatusText())}</p>
@@ -862,7 +872,7 @@ const srvHeaders = () => { const t = settings().serverToken; return t ? { 'X-Sak
 function serverStatusText() {
   const st = db.get('srv', {});
   if (st.ok) return `✓ Zuletzt gesichert: ${new Date(st.ok).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`;
-  if (st.err) return `Noch keine Server-Sicherung (${st.err}).`;
+  if (st.backupErr) return `Noch keine Server-Sicherung (${st.backupErr}).`;
   return 'Noch keine Server-Sicherung.';
 }
 async function serverBackup(manual = false) {
@@ -879,11 +889,11 @@ async function serverBackup(manual = false) {
     if ([404, 405, 501].includes(r.status)) throw new Error('hier läuft kein Sakina-Server');
     if (r.status === 401) throw new Error('Server-Token fehlt oder ist falsch');
     if (!r.ok) throw new Error('Server-Fehler ' + r.status);
-    db.set('srv', { ok: Date.now(), tried: now });
+    db.set('srv', { ...db.get('srv', {}), ok: Date.now(), tried: now, backupErr: null });
     if (manual) toast('Auf dem Server gesichert ✓');
   } catch (e) {
-    db.set('srv', { ...db.get('srv', {}), err: e.message === 'Failed to fetch' ? 'Server nicht erreichbar' : e.message });
-    if (manual) toast(db.get('srv').err);
+    db.set('srv', { ...db.get('srv', {}), backupErr: e.message === 'Failed to fetch' ? 'Server nicht erreichbar' : e.message });
+    if (manual) toast(db.get('srv').backupErr);
   }
   const el = $('#srvStatus'); if (el) el.textContent = serverStatusText();
 }
@@ -974,6 +984,20 @@ const ACT = {
   fav(b) { const f = db.get('favs', []), n = b.dataset.n, i = f.indexOf(n); if (i >= 0) f.splice(i, 1); else f.push(n); db.set('favs', f); render(); },
   favDel(b) { db.set('favs', db.get('favs', []).filter(x => x !== b.dataset.n)); render(); },
   newPlan() { generatePlan(); },
+  job(b) { runServerJob(b.dataset.job); },
+  async propAccept(b) {
+    const id = b.dataset.id, unit = $('#u_' + CSS.escape(id))?.value;
+    try { const r = await api('catalog/exercise', { method: 'POST', body: JSON.stringify({ id, action: 'accept', unit }) }); db.set('catalog', r.catalog); applyCatalog(); render(); toast('Übernommen ✓'); }
+    catch (e) { toast(e.message); }
+  },
+  async propReject(b) {
+    try { const r = await api('catalog/exercise', { method: 'POST', body: JSON.stringify({ id: b.dataset.id, action: 'reject' }) }); db.set('catalog', r.catalog); applyCatalog(); render(); }
+    catch (e) { toast(e.message); }
+  },
+  async planOpen(b) {
+    try { showPlanOverlay(await api('history/plan?id=' + encodeURIComponent(b.dataset.id)), b.dataset.id); }
+    catch (e) { toast(e.message); }
+  },
   rerender() { render(); },
 };
 
@@ -1026,6 +1050,11 @@ function init() {
       catch (err) { out.textContent = '✗ ' + err.message; }
     }
     else if (g === 'export') exportData();
+    else if (g === 'syncNow') { readSettingsForm(); await checkServer(); await syncNow(true); const el = $('#syncStatus'); if (el) el.textContent = syncStatusText(); }
+    else if (g === 'planReuse') {
+      const p = { ...showPlanOverlay.current, created: today(), validFrom: mondayOf(today()), reused: true };
+      delete p.dbId; db.set('plan', p); db.set('shop', { checked: {} }); closeOverlay(); render(); toast('Plan übernommen 🍲');
+    }
     else if (g === 'srvBackup') { readSettingsForm(); serverBackup(true); }
     else if (g === 'srvRestore') { readSettingsForm(); serverRestore(); }
   });
@@ -1034,11 +1063,14 @@ function init() {
   addEventListener('pagehide', flushAll);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) flushAll();
-    else { if (S.day !== today()) render(); serverBackup(); }
+    else { if (S.day !== today()) render(); serverBackup(); checkServer().then(() => syncNow()); }
   });
 
+  applyCatalog();
   render(false);
   setTimeout(() => serverBackup(), 1500);
+  checkServer().then(() => syncNow());
+  setInterval(() => { if (!document.hidden) syncNow(); }, 60e3);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-init();
+document.addEventListener('DOMContentLoaded', init);

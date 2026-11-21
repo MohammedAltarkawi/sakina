@@ -1,11 +1,11 @@
 /* Sakina – Service Worker (offline) */
-const VERSION = 'sakina-v5';
+const VERSION = 'sakina-v6';
 const FONTS = [
   'amiri-arabic-400-normal', 'amiri-arabic-700-normal', 'amiri-latin-400-normal', 'amiri-latin-700-normal',
   'fraunces-latin-500-normal', 'fraunces-latin-700-normal',
   'nunito-latin-400-normal', 'nunito-latin-600-normal', 'nunito-latin-700-normal', 'nunito-latin-800-normal', 'nunito-latin-400-italic',
 ].map(f => `./fonts/${f}.woff2`);
-const CORE = ['./', './index.html', './style.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './fonts.css', ...FONTS];
+const CORE = ['./', './index.html', './style.css', './app.js', './sync.js', './data.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './fonts.css', ...FONTS];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));

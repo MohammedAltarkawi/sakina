@@ -11,11 +11,18 @@ Umgebungsvariablen (alle optional):
   SAKINA_TOKEN  Wenn gesetzt, muss die App diesen Token mitschicken
   SAKINA_KEEP   Wie viele Backups behalten    (Standard: 90)
 
-API:
-  GET  /api/health          -> {"ok": true, ...}
-  POST /api/backup          -> Backup (JSON aus der App) speichern
-  GET  /api/backup/latest   -> neuestes Backup
-  GET  /api/backups         -> Liste der Backups
+API (alle außer /api/health brauchen den Token, falls gesetzt):
+  GET  /api/health              -> {"ok": true, "claude": true, ...}
+  POST /api/sync                -> Abgleich App <-> Datenbank (siehe sync.py)
+  GET  /api/catalog             -> Übungen, Einheiten, Stufen, Gerichte, Pläne aus der DB
+  POST /api/catalog/exercise    -> {"id","action":"accept"|"reject"|"remove","unit"}
+  POST /api/ai/start            -> {"job":"plan"|"analysis"|"exercises"|"fact","topic"}
+  GET  /api/ai/status           -> laufende Jobs + letzte Läufe
+  GET  /api/history/plans       -> alle gespeicherten Wochenpläne (kurz)
+  GET  /api/history/plan?id=N   -> ein Wochenplan komplett
+  POST /api/backup              -> Backup (JSON aus der App) speichern
+  GET  /api/backup/latest       -> neuestes Backup
+  GET  /api/backups             -> Liste der Backups
 """
 import json
 import mimetypes
@@ -26,7 +33,12 @@ from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import claude_jobs  # noqa: E402
+import db  # noqa: E402
+import sync  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent          # Repo-Ordner mit index.html
 HOST = os.environ.get("SAKINA_HOST", "127.0.0.1")
@@ -82,16 +94,32 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        u = urlparse(self.path)
+        path = u.path
         if "/api/" in path:
-            return self._api_get(path[path.index("/api/"):])
+            try:
+                return self._api_get(path[path.index("/api/"):], parse_qs(u.query))
+            except Exception as e:  # noqa: BLE001
+                return self._json(500, {"error": str(e)[:300]})
         self._static(path)
 
-    def _api_get(self, path):
+    def _api_get(self, path, q):
         if path == "/api/health":
-            return self._json(200, {"ok": True, "app": "sakina", "backups": len(backup_files()), "token": bool(TOKEN)})
+            return self._json(200, {"ok": True, "app": "sakina", "backups": len(backup_files()), "token": bool(TOKEN),
+                                    "db": True, "claude": claude_jobs.claude_available()})
         if not self._authorized():
             return self._json(401, {"error": "Token fehlt oder falsch"})
+        if path == "/api/catalog":
+            return self._json(200, db.catalog())
+        if path == "/api/ai/status":
+            return self._json(200, {"available": claude_jobs.claude_available(), "running": claude_jobs.running_jobs(),
+                                    "runs": claude_jobs.last_runs(15)})
+        if path == "/api/history/plans":
+            return self._json(200, {"plans": [dict(r) for r in db.conn().execute(
+                "SELECT id,title,valid_from,created_on,source FROM meal_plans ORDER BY id DESC")]})
+        if path == "/api/history/plan":
+            r = db.conn().execute("SELECT raw FROM meal_plans WHERE id=?", ((q.get("id") or ["0"])[0],)).fetchone()
+            return self._json(200, json.loads(r[0])) if r else self._json(404, {"error": "Plan nicht gefunden"})
         if path == "/api/backup/latest":
             files = backup_files()
             if not files:
@@ -127,17 +155,51 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         path = path[path.index("/api/"):] if "/api/" in path else path
-        if path != "/api/backup":
+        routes = {"/api/backup": self._post_backup, "/api/sync": self._post_sync,
+                  "/api/catalog/exercise": self._post_exercise, "/api/ai/start": self._post_ai}
+        if path not in routes:
             return self._json(404, {"error": "Unbekannt"})
         if not self._authorized():
             return self._json(401, {"error": "Token fehlt oder falsch"})
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
-            return self._json(413, {"error": "Backup leer oder zu groß"})
+            return self._json(413, {"error": "Anfrage leer oder zu groß"})
         try:
             data = json.loads(self.rfile.read(length))
         except ValueError:
             return self._json(400, {"error": "Kein gültiges JSON"})
+        try:
+            routes[path](data)
+        except claude_jobs.JobError as e:
+            self._json(409, {"error": str(e)})
+        except KeyError as e:
+            self._json(404, {"error": str(e).strip("'")})
+        except Exception as e:  # noqa: BLE001
+            self._json(500, {"error": str(e)[:300]})
+
+    def _post_sync(self, data):
+        if not isinstance(data, dict):
+            return self._json(400, {"error": "Ungültig"})
+        self._json(200, sync.apply_sync(data))
+
+    def _post_exercise(self, data):
+        act = data.get("action")
+        if act in ("accept", "reject"):
+            sync.decide_exercise(str(data.get("id")), act == "accept", data.get("unit"))
+        elif act == "remove":
+            sync.remove_from_unit(str(data.get("id")), str(data.get("unit")))
+        else:
+            return self._json(400, {"error": "action?"})
+        self._json(200, {"ok": True, "catalog": db.catalog()})
+
+    def _post_ai(self, data):
+        job = data.get("job")
+        if not claude_jobs.claude_available():
+            return self._json(503, {"error": "claude ist auf dem Server nicht verfügbar"})
+        claude_jobs.start_job_async(job, "app", data.get("topic"))
+        self._json(202, {"ok": True, "running": claude_jobs.running_jobs()})
+
+    def _post_backup(self, data):
         if not isinstance(data, dict) or data.get("app") not in ("sakina", "guter-tag") or not isinstance(data.get("data"), dict):
             return self._json(400, {"error": "Das ist kein Sakina-Backup"})
         settings = data["data"].get("settings")
@@ -161,6 +223,8 @@ def main():
         sys.exit(f"index.html nicht gefunden in {ROOT}")
     DATA.mkdir(parents=True, exist_ok=True)
     os.chmod(DATA, 0o700)
+    os.environ.setdefault("SAKINA_DATA", str(DATA))
+    db.migrate()
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Sakina läuft auf http://{HOST}:{PORT}  ·  Backups in {BACKUPS}" + ("  ·  mit Token" if TOKEN else ""), flush=True)
     try:

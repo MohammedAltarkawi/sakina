@@ -8,7 +8,17 @@ Im Mittelpunkt steht, wie man sich fühlt und was der Körper leistet, nicht Kal
 - **🧠 Wissen**: 8 Übungen zum Kopf-Beruhigen (3 davon geführt), Fakt des Tages (KI oder eingebaut)
 - **🍲 Meal Prep**: Gegessen-Checkliste, Wochenplan mit Protein, Prep-Schritte mit Geräten, Einkaufsliste, KI-Wochenplan, Lieblingsgerichte
 
-Reines HTML/CSS/JavaScript, **kein Build-Schritt, keine Abhängigkeiten**. Der optionale Server braucht nur Python 3.
+Reines HTML/CSS/JavaScript, **kein Build-Schritt, keine Abhängigkeiten**. Der Server braucht nur Python 3 und speichert alles in einer **SQLite-Datenbank**.
+
+### Datenbank & Claude (auf deinem Server)
+- **Offline-first:** Du kannst immer eintragen, auch ohne Server. Sobald der Server erreichbar ist, gleicht die App alles mit der Datenbank ab (⚙️ zeigt den Status).
+- **Variable Inhalte aus der Datenbank:** Übungen, Gym-Einheiten, Stufen, Zuhause-Liste, Gerichte, Wochenpläne, Analysen, alles mit Datum, damit du den Verlauf siehst.
+- **Claude Code auf dem Server** (dein Abo, kein API-Schlüssel nötig):
+  - **Freitag 18 Uhr:** neuer Meal-Prep-Plan aus Verlauf, Vorrat, Wunsch und Lieblingsgerichten
+  - **Sonntag 19 Uhr:** Wochen-Auswertung (Schlaf, Energie, Bewegung, Essen, stärkend, ohne Gewicht)
+  - **Am 1. jedes Monats:** Übungs-Check mit Vorschlägen für neue Übungen. Die landen als **Vorschlag**, du bestätigst sie in der App.
+  - Alles auch per Knopf in der App. Fakt des Tages kommt ebenfalls von Claude.
+- Claude bekommt dabei **keine Werkzeuge**: Der Server gibt ihm die Daten als Text, prüft die Antwort und schreibt selbst in die Datenbank.
 
 ---
 
@@ -17,7 +27,9 @@ Reines HTML/CSS/JavaScript, **kein Build-Schritt, keine Abhängigkeiten**. Der o
 | Was | Wo |
 |---|---|
 | Alle Einträge | **auf dem Handy**, im Speicher der App (localStorage, Schlüssel beginnen mit `gt_`) |
-| Automatische Sicherung | **auf deinem eigenen Server** (nur wenn du ihn betreibst), Ordner `/var/lib/sakina/backups` |
+| Datenbank (Katalog + Verlauf) | **auf deinem eigenen Server**: `/var/lib/sakina/sakina.db` |
+| Automatische Sicherung | **auf deinem eigenen Server**, Ordner `/var/lib/sakina/backups` |
+| Claude-Auswertungen | laufen über dein Claude-Abo auf dem Server. Claude bekommt Tageswerte, aber keine Stolz-Texte und kein Gewicht. |
 | Schriften | liegen in `fonts/`, **keine Anfragen an Google** |
 | KI (optional) | Nur Fakt des Tages und Wochenplan gehen an den KI-Anbieter, den du unter ⚙️ einträgst. Es wird nur das Thema bzw. Vorrat/Wunsch geschickt, **nie** Stimmung, Stolz oder Gewicht. |
 | API-Schlüssel | nur auf dem Gerät, **nie** in Backups und nie auf dem Server |
@@ -46,7 +58,14 @@ Host github-sakina
 EOF
 ```
 
-### 3. Holen und installieren
+### 3. Claude Code auf dem Server (für Pläne, Analysen, Übungen)
+Als **derselbe Benutzer**, der Sakina laufen lässt:
+```bash
+claude            # einmal starten und mit deinem Abo einloggen, dann /exit
+claude -p "sag hallo"    # muss antworten
+```
+
+### 4. Holen und installieren
 ```bash
 sudo mkdir -p /srv/sakina && sudo chown $USER /srv/sakina
 git clone git@github-sakina:MohammedAltarkawi/sakina.git /srv/sakina
@@ -55,10 +74,11 @@ cd /srv/sakina && ./deploy/install.sh
 Das Skript richtet ein:
 - `sakina.service`: der Server (`server/sakina_server.py`) auf `127.0.0.1:8787`, startet automatisch
 - `sakina-update.timer`: holt alle 2 Minuten Neues von GitHub (`deploy/update.sh`)
+- `sakina-job-plan/analysis/exercises.timer`: Claude-Jobs (Fr, So, monatlich)
 - `tailscale serve`: HTTPS nach außen, nur im eigenen Tailnet
 - `/etc/sakina.env`: Einstellungen (Port, Datenordner, optional Token)
 
-### 4. Aufs iPhone
+### 5. Aufs iPhone
 1. **Vorher** in der alten App: ⚙️ → „Backup exportieren“
 2. Die `ts.net`-Adresse in **Safari** öffnen → Teilen → **Zum Home-Bildschirm**
 3. In der neuen App: ⚙️ → „Backup importieren“
@@ -71,6 +91,10 @@ journalctl -u sakina -n 50              # Logs
 journalctl -u sakina-update -n 20       # letzte Updates
 ls -lh /var/lib/sakina/backups          # Sicherungen (die letzten 90 bleiben)
 tailscale serve status                  # HTTPS-Adresse
+sudo systemctl start sakina-job@analysis   # Claude-Job sofort laufen lassen (plan | analysis | exercises)
+journalctl -u sakina-job@plan -n 30        # Log eines Claude-Jobs
+systemctl list-timers 'sakina*'            # wann die Jobs das nächste Mal laufen
+sqlite3 /var/lib/sakina/sakina.db '.tables'   # in die Datenbank schauen
 sudo systemctl restart sakina           # neu starten
 ```
 

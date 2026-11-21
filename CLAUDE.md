@@ -3,20 +3,31 @@
 Hinweise für Claude Code (und Menschen), die an Sakina weiterarbeiten. Der Nutzer spricht Deutsch, also auf Deutsch antworten, locker und in du-Form.
 
 ## Was ist das?
-Persönliche Wohlfühl-PWA für **einen** Nutzer (Mohammed). Vanilla HTML/CSS/JS ohne Build, ohne Framework, ohne npm-Abhängigkeiten zur Laufzeit. Optionaler Python-Server (nur Standardbibliothek) für Selbsthosting und Backups.
+Persönliche Wohlfühl-PWA für **einen** Nutzer (Mohammed). Vanilla HTML/CSS/JS ohne Build, ohne Framework, ohne npm-Abhängigkeiten zur Laufzeit. Python-Server (nur Standardbibliothek) mit **SQLite-Datenbank** für Katalog + Verlauf, Sync und **Claude-Jobs** (Claude Code CLI auf dem Server).
+
+### Grundprinzip
+- **Offline-first:** Die App speichert alles zuerst im localStorage und gleicht sich mit dem Server ab, sobald er erreichbar ist. Der Server hängt am Handy-Hotspot und ist unterwegs offline, also muss die App immer ohne Server funktionieren.
+- **Variable Inhalte kommen aus der Datenbank** (Übungen, Einheiten, Stufen, Zuhause-Liste, Gerichte, Wochenpläne, Analysen). `data.js` ist nur noch **Startwert/Fallback** (Seed) und für Texte, die fest bleiben (Sprüche, Atemübungen, Tipps).
+- **Claude schreibt nie direkt in die DB.** Der Server baut den Kontext aus der DB, ruft `claude -p` ohne Werkzeuge auf, prüft das JSON und schreibt dann selbst.
 
 ## Dateien
 | Datei | Inhalt |
 |---|---|
 | `index.html` | Gerüst: Kopfzeile, `#view`, Tab-Leiste, `#overlay`, `#toast`. Lädt `fonts.css`, `style.css`, `data.js`, `app.js` |
 | `data.js` | **Feste Inhalte**: Sprüche/Verse, Skalen, Übungen (`EX`, `LADDERS`, `UNITS`), Tipps, Joggen-Stufen, Atemübungen (`CALM`, `PATTERNS`), Wissens-Themen, eingebaute Fakten, Startplan, **KI-Prompts** (`FACT_SYSTEM`, `PLAN_SYSTEM`) |
-| `app.js` | Logik: Speicher (`db`), Render-Funktionen pro Tab (`renderHeute/Bewegung/Wissen/Meal`), Aktionen (`ACT`), Eingaben (`INP`), KI (`ai()`), Backup, Server-Sicherung |
+| `app.js` | Logik: Speicher (`db`, `db.set` markiert für Sync), Render-Funktionen pro Tab (`renderHeute/Bewegung/Wissen/Meal`), Aktionen (`ACT`), Eingaben (`INP`), KI per API-Schlüssel (`ai()`, Fallback), Backup |
+| `sync.js` | Client-Sync (`syncNow`, `markDirty`, `syncmeta`), `applyCatalog()` (DB-Katalog → `EX/LADDERS/UNITS/HOME_ITEMS`), Claude-Jobs (`runServerJob`), Karten für Vorschläge/Analysen/Plan-Verlauf |
 | `style.css` | Design, CSS-Variablen für hell/dunkel (`[data-theme=dark]`) |
 | `fonts.css`, `fonts/` | Lokale Schriften (Fraunces, Nunito, Amiri; OFL). Keine externen Schriften einbinden. |
 | `sw.js` | Service Worker: Netz zuerst, sonst Cache. `/api/` wird nie gecacht. |
 | `manifest.webmanifest`, `icon*` | PWA |
-| `server/sakina_server.py` | Liefert nur App-Dateien (Whitelist) aus + `/api/health`, `POST /api/backup`, `GET /api/backup/latest`, `GET /api/backups` |
-| `deploy/install.sh`, `deploy/update.sh` | systemd-Dienst, Update-Timer (git pull), `tailscale serve` |
+| `server/sakina_server.py` | HTTP: App-Dateien (Whitelist) + API (Liste im Datei-Kopf) |
+| `server/db.py` | SQLite-Schema (`MIGRATIONS`, nur anhängen!), Seed, `catalog()` |
+| `server/sync.py` | `/api/sync` (last-write-wins), Normalisierung Docs → Tabellen, Pläne speichern, Vorschläge annehmen/ablehnen |
+| `server/claude_jobs.py` | Jobs `plan`, `analysis`, `exercises`, `fact`: Kontext aus DB → `claude -p --tools ""` → JSON prüfen → DB |
+| `server/prompts/*.md` | System-Prompts der Jobs. `plan.md`/`fact.md` werden aus `data.js` erzeugt |
+| `server/seed_catalog.json`, `tools/export_seed.js` | Seed für eine **neue** DB, erzeugt aus `data.js` (`node tools/export_seed.js`) |
+| `deploy/install.sh`, `deploy/update.sh` | systemd-Dienst, Update-Timer (git pull), Claude-Timer, `tailscale serve` |
 
 ## Architektur in Kürze
 - Rendern = Template-Strings → `#view.innerHTML`. `render()` ruft zuerst `flushAll()` (verzögerte Speicherungen) auf und erhält Scroll-Position und offene `<details>`.
@@ -24,7 +35,7 @@ Persönliche Wohlfühl-PWA für **einen** Nutzer (Mohammed). Vanilla HTML/CSS/JS
 - Zustand der Oberfläche in `S` (aktiver Tab, gewählte Sportart …), Daten nur im Speicher.
 - Datum immer lokal als `YYYY-MM-DD` (`today()`, `addDays()`, `dow()` mit 0 = Montag).
 
-## Datenmodell (localStorage, Präfix `gt_`, **nie umbenennen**)
+## Datenmodell: App (localStorage, Präfix `gt_`, **nie umbenennen**)
 | Schlüssel | Inhalt |
 |---|---|
 | `d_YYYY-MM-DD` | `{scales:{sleep,energy,body,head}, proud, soul:'yes'\|'no'\|null, soulWhat, water, eaten:{fr,mi,ab,sh}, health:{steps,sleepH,rhr,ts}}` |
@@ -33,7 +44,19 @@ Persönliche Wohlfühl-PWA für **einen** Nutzer (Mohammed). Vanilla HTML/CSS/JS
 | `k_YYYY-MM-DD` | `{facts:[{topic,title,text,tip}]}` |
 | `plan`, `shop`, `favs`, `notes`, `ladders`, `jog`, `pantry`, `wish`, `homeCustom`, `planHistory` | siehe Namen |
 | `settings` | `{name, theme, provider, model, baseUrl, apiKey, serverToken}`. `apiKey`/`serverToken` kommen **nie** ins Backup. |
-| `srv` | Gerätestatus der Server-Sicherung (`LOCAL_ONLY`, nicht im Backup) |
+| `srv` | Gerätestatus Server (db/claude erreichbar, Backup), `LOCAL_ONLY` |
+| `syncmeta` | `{t:{key:ms}, dirty:{key:true}, seq, init, last}`, nur lokal |
+| `catalog` | letzter Katalog vom Server (`/api/catalog`), nur lokal |
+| `analyses` | vom Server geschrieben: letzte 12 Analysen |
+
+Server-geschriebene Dokumente (kommen per Sync aufs Handy): `plan`, `shop`, `planHistory`, `analyses`, `k_DATUM`.
+
+## Datenmodell: Server (SQLite `SAKINA_DATA/sakina.db`)
+- **Katalog:** `exercises` (`category` gym|home, `kind`, `status` active|proposed|archived, `source` seed|claude|user), `ladder_stages`, `units` (A–D, `exercise_ids` JSON), `dishes` (fav, times_planned, last_planned), `meal_plans` (+ `plan_meals`, `prep_steps`, `shopping_items`, `raw`)
+- **Verlauf:** `day_entries`, `activities`, `sets`, `weights`, `facts`, `analyses`, `ai_runs` (Protokoll jedes Claude-Laufs)
+- **Sync:** `docs` (Spiegel aller App-Dokumente mit `updated_at` + `seq`), `meta` (`seq`, `catalog_version`)
+- Neue Spalten/Tabellen nur als **neuer Eintrag in `MIGRATIONS`** (nie alte ändern). Neue Seed-Inhalte für bestehende DBs ebenfalls per Migration (`INSERT OR IGNORE`).
+- Nach Katalog-Änderungen `db.bump_catalog(c)` aufrufen, sonst holt die App den Katalog nicht neu.
 
 Bei Sätzen: `a` = kg / Hilfe-kg, `b` = Wiederholungen / Sekunden / Meter (je nach `kind` in `EX`/`LADDERS`).
 **Übungs-IDs in `EX` nicht ändern**: Daten und Import hängen daran.
@@ -54,13 +77,15 @@ Die Daten liegen auf dem Handy des Nutzers, ein Fehler kann sie zerstören. Desh
 - Training: rücken-, knie- und schulterschonend. Kein schweres Kniebeugen mit Langhantel, kein klassisches Kreuzheben, kein Drücken über Kopf. Der Orthopäden-Hinweis bleibt unter jedem Plan.
 - Meal-Prep-Schritte dürfen nie mehr Küchengeräte gleichzeitig brauchen, als er hat (siehe `PLAN_SYSTEM`).
 - Barrierefreiheit: große Tipp-Flächen (≥ 44 px), `aria-label`/`aria-pressed`, Dark Mode mitdenken.
-- Privatsphäre: keine externen Skripte, Schriften, Tracker oder CDNs. Persönliche Einträge nie an die KI schicken.
+- Privatsphäre: keine externen Skripte, Schriften, Tracker oder CDNs. Über den API-Schlüssel (Handy → Anbieter) gehen nie persönliche Einträge. Claude auf dem Server bekommt für Analysen Tageswerte (Skalen, Wasser, Bewegung, Schritte, Gegessen), aber **keine Stolz-Texte und kein Gewicht**.
+- Neue Übungen von Claude sind immer `proposed` und brauchen die Bestätigung des Nutzers. Verbotene Übungen filtert zusätzlich `FORBIDDEN` in `claude_jobs.py`.
 
 ## Release-Checkliste (bei jeder Änderung)
 1. `APP_VERSION` in `app.js` hochzählen (steht unter ⚙️ ganz unten).
 2. `VERSION` in `sw.js` hochzählen (z. B. `sakina-v6`), sonst bleibt der alte Cache. Neue statische Dateien in `CORE` aufnehmen.
 3. `node --check app.js data.js sw.js` und `python3 -m py_compile server/sakina_server.py`.
-4. Lokal testen: `SAKINA_DATA=./data python3 server/sakina_server.py` und im Browser (Handy-Breite ~400 px, hell + dunkel) durchklicken. Mit Playwright: Konsole auf Fehler prüfen.
+4. Lokal testen: `SAKINA_DATA=./data python3 server/sakina_server.py` und im Browser (Handy-Breite ~400 px, hell + dunkel) durchklicken. Mit Playwright: Konsole auf Fehler prüfen. Claude-Jobs ohne echtes Claude testen: `SAKINA_CLAUDE=/pfad/zu/fake-claude` (ein Skript, das `{"result":"<json>"}` ausgibt). Offline testen: `/api/**` blockieren, App muss weiterlaufen und danach nachsynchronisieren.
+   Wenn `data.js` (Übungen, Startplan, Prompts) geändert wurde: `node tools/export_seed.js`.
 5. Commit auf `main` und pushen. Der Server holt es innerhalb von 2 Minuten (`sakina-update.timer`). Auf dem iPhone die App 1–2× schließen und neu öffnen.
 
 ## Server-Hinweise
@@ -68,6 +93,12 @@ Die Daten liegen auf dem Handy des Nutzers, ein Fehler kann sie zerstören. Desh
 - Statische Auslieferung nur per Whitelist (Endungen + Ordner `""`/`fonts`). Neue Ordner mit App-Dateien in `STATIC_DIRS` eintragen.
 - Backups: `SAKINA_DATA/backups/sakina-<Zeit>.json`, Rechte 600, die neuesten `SAKINA_KEEP` (90) bleiben. `apiKey` wird serverseitig zusätzlich entfernt.
 - Ändert sich etwas in `server/`, startet `deploy/update.sh` den Dienst neu.
+
+## Claude-Jobs
+- Aufruf: `claude -p --output-format json --tools "" --permission-mode dontAsk --strict-mcp-config --system-prompt-file …`, Eingabe per stdin, in einem leeren Temp-Ordner. **Keine Werkzeuge freischalten.**
+- Per App: `POST /api/ai/start {job}` → Thread, Status über `GET /api/ai/status`. Per Timer: `sakina-job@plan|analysis|exercises` (Fr 18:00, So 19:00, am 1. um 10:00).
+- Manuell auf dem Server: `python3 server/claude_jobs.py analysis` (mit `SAKINA_DATA` aus `/etc/sakina.env`).
+- Protokoll: Tabelle `ai_runs` bzw. `journalctl -u sakina-job@plan`.
 
 ## Ideen / offene Punkte
 - Kurzbefehl „Sakina Sync“: die deutschen Aktionsnamen in iOS sind nicht ganz sicher. Bei Problemen ein Beispiel vom Nutzer holen.

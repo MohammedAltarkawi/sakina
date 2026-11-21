@@ -9,6 +9,9 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUN_USER="${SUDO_USER:-$USER}"
+RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
+CLAUDE_BIN="$(sudo -u "$RUN_USER" bash -lc 'command -v claude' 2>/dev/null || true)"
+[ -z "$CLAUDE_BIN" ] && [ -x "$RUN_HOME/.local/bin/claude" ] && CLAUDE_BIN="$RUN_HOME/.local/bin/claude"
 DATA_DIR="${SAKINA_DATA:-/var/lib/sakina}"
 PORT="${SAKINA_PORT:-8787}"
 
@@ -34,9 +37,17 @@ SAKINA_DATA=$DATA_DIR
 SAKINA_KEEP=90
 # Optional: Token, den die App mitschicken muss (in der App unter ⚙️ eintragen)
 SAKINA_TOKEN=
+# Claude Code im Terminal (für Wochenplan, Analyse, Übungs-Check, Fakten)
+SAKINA_CLAUDE=$CLAUDE_BIN
+# Optional: bestimmtes Modell, z. B. sonnet
+SAKINA_CLAUDE_MODEL=
 CONF
   sudo chmod 640 "$ENV_FILE"
   sudo chown root:"$RUN_USER" "$ENV_FILE"
+fi
+
+if ! sudo grep -q '^SAKINA_CLAUDE=' "$ENV_FILE"; then
+  printf '\n# Claude Code im Terminal\nSAKINA_CLAUDE=%s\nSAKINA_CLAUDE_MODEL=\n' "$CLAUDE_BIN" | sudo tee -a "$ENV_FILE" >/dev/null
 fi
 
 say "Dienst sakina.service"
@@ -55,7 +66,8 @@ RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=$DATA_DIR
+# Claude Code braucht Schreibzugriff auf seine Anmeldung/Einstellungen
+ReadWritePaths=$DATA_DIR -$RUN_HOME/.claude -$RUN_HOME/.claude.json -$RUN_HOME/.config/claude -$RUN_HOME/.cache
 PrivateTmp=true
 
 [Install]
@@ -87,8 +99,46 @@ UNIT
 echo "$RUN_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart sakina.service" | sudo tee /etc/sudoers.d/sakina >/dev/null
 sudo chmod 440 /etc/sudoers.d/sakina
 
+say "Claude-Jobs (Fr Wochenplan, So Analyse, monatlich Übungs-Check)"
+sudo tee /etc/systemd/system/sakina-job@.service >/dev/null <<UNIT
+[Unit]
+Description=Sakina Claude-Job %i
+
+[Service]
+Type=oneshot
+User=$RUN_USER
+EnvironmentFile=$ENV_FILE
+ExecStart=/usr/bin/python3 $APP_DIR/server/claude_jobs.py %i --trigger timer
+TimeoutStartSec=15min
+UNIT
+make_timer() { # name, OnCalendar
+  sudo tee "/etc/systemd/system/sakina-job-$1.timer" >/dev/null <<UNIT
+[Unit]
+Description=Sakina Claude-Job $1
+
+[Timer]
+OnCalendar=$2
+Persistent=true
+Unit=sakina-job@$1.service
+
+[Install]
+WantedBy=timers.target
+UNIT
+}
+make_timer plan      "Fri *-*-* 18:00:00"
+make_timer analysis  "Sun *-*-* 19:00:00"
+make_timer exercises "*-*-01 10:00:00"
+
 sudo systemctl daemon-reload
-sudo systemctl enable --now sakina.service sakina-update.timer
+sudo systemctl enable --now sakina.service sakina-update.timer sakina-job-plan.timer sakina-job-analysis.timer sakina-job-exercises.timer
+sudo systemctl restart sakina.service
+
+if [ -n "$CLAUDE_BIN" ]; then
+  say "Claude gefunden: $CLAUDE_BIN"
+  echo "Test: sudo systemctl start sakina-job@analysis && journalctl -u sakina-job@analysis -n 20"
+else
+  echo "⚠️  claude nicht gefunden. Installieren und einloggen (als $RUN_USER), dann SAKINA_CLAUDE in $ENV_FILE eintragen."
+fi
 
 say "Test"
 sleep 1
