@@ -1,6 +1,11 @@
 /* Sakina – Service Worker (offline) */
-const VERSION = 'sakina-v4';
-const CORE = ['./', './index.html', './style.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
+const VERSION = 'sakina-v5';
+const FONTS = [
+  'amiri-arabic-400-normal', 'amiri-arabic-700-normal', 'amiri-latin-400-normal', 'amiri-latin-700-normal',
+  'fraunces-latin-500-normal', 'fraunces-latin-700-normal',
+  'nunito-latin-400-normal', 'nunito-latin-600-normal', 'nunito-latin-700-normal', 'nunito-latin-800-normal', 'nunito-latin-400-italic',
+].map(f => `./fonts/${f}.woff2`);
+const CORE = ['./', './index.html', './style.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './fonts.css', ...FONTS];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -15,17 +20,8 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Schriften: aus dem Cache, im Hintergrund auffrischen
-  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
-    e.respondWith(caches.open(VERSION).then(async c => {
-      const hit = await c.match(req);
-      const net = fetch(req).then(r => { if (r.ok || r.type === 'opaque') c.put(req, r.clone()); return r; }).catch(() => hit);
-      return hit || net;
-    }));
-    return;
-  }
-
   if (url.origin !== location.origin) return; // KI-Anfragen usw. normal übers Netz
+  if (url.pathname.includes('/api/')) return;   // Server-Sicherung nie cachen
 
   // App-Dateien: erst Netz (damit Updates ankommen), sonst Cache
   e.respondWith(

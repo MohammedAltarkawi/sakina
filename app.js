@@ -1,7 +1,7 @@
 'use strict';
 /* Sakina – App-Logik */
 
-const APP_VERSION = 'v3 · Health-Import';
+const APP_VERSION = 'v4 · Selbsthosten';
 
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -37,7 +37,8 @@ const db = {
     return out.sort();
   },
 };
-const settings = () => Object.assign({ name: 'Mohammed', provider: 'anthropic', apiKey: '', model: '', baseUrl: '', theme: 'auto' }, db.get('settings', {}));
+const settings = () => Object.assign({ name: 'Mohammed', provider: 'anthropic', apiKey: '', model: '', baseUrl: '', theme: 'auto', serverToken: '' }, db.get('settings', {}));
+const LOCAL_ONLY = ['srv']; // Gerätestatus, kommt nicht ins Backup
 const hasAI = () => !!settings().apiKey;
 const dayDoc = (d = today()) => Object.assign({ scales: {}, proud: '', soul: null, soulWhat: '', water: 0, eaten: {} }, db.get('d_' + d, {}));
 const saveDay = (doc, d = today()) => db.set('d_' + d, doc);
@@ -803,7 +804,12 @@ function openSettings() {
     <label class="lbl">Modell<input id="sModel" type="text" value="${esc(s.model)}" placeholder=""></label>
     <div class="row"><button class="btn primary" data-g="saveSettings">Speichern</button><button class="btn" data-g="test">Verbindung testen</button></div>
     <p id="sTest" class="small" aria-live="polite"></p>
-    <h4>Backup</h4><p class="small muted">Alle Einträge als Datei sichern oder wiederherstellen.</p>
+    <h4>Sicherung auf deinem Server</h4>
+    <p class="small muted">Läuft Sakina auf deinem eigenen Server, sichert die App deine Einträge automatisch dorthin (beim Öffnen, höchstens alle 30 Minuten). Nichts geht an fremde Server.</p>
+    <p id="srvStatus" class="small" aria-live="polite">${esc(serverStatusText())}</p>
+    <label class="lbl">Server-Token <span class="muted">(nur falls auf dem Server gesetzt)</span><input id="sToken" type="password" autocomplete="off" value="${esc(s.serverToken)}"></label>
+    <div class="row"><button class="btn" data-g="srvBackup">Jetzt sichern</button><button class="btn" data-g="srvRestore">Vom Server wiederherstellen</button></div>
+    <h4>Backup als Datei</h4><p class="small muted">Alle Einträge als Datei sichern oder wiederherstellen.</p>
     <div class="row"><button class="btn" data-g="export">Backup exportieren</button><label class="btn file-btn">Backup importieren<input type="file" id="sImport" accept="application/json,.json" hidden></label></div>
     <p class="small muted center">Sakina ${APP_VERSION} · alle Daten bleiben privat auf diesem Gerät.</p></div>`;
   $('#sTheme').value = s.theme; $('#sProv').value = s.provider;
@@ -814,28 +820,82 @@ function openSettings() {
 }
 function readSettingsForm() {
   const s = settings();
-  Object.assign(s, { name: $('#sName').value.trim() || 'Mohammed', theme: $('#sTheme').value, provider: $('#sProv').value, baseUrl: $('#sBase').value.trim(), apiKey: $('#sKey').value.trim(), model: $('#sModel').value.trim() });
+  Object.assign(s, { name: $('#sName').value.trim() || 'Mohammed', theme: $('#sTheme').value, provider: $('#sProv').value, baseUrl: $('#sBase').value.trim(), apiKey: $('#sKey').value.trim(), model: $('#sModel').value.trim(), serverToken: $('#sToken').value.trim() });
   db.set('settings', s); applyTheme();
 }
-function exportData() {
+function buildBackup() {
   flushAll();
-  const out = { app: 'sakina', version: 1, exported: new Date().toISOString(), data: {} };
-  db.keys('').forEach(k => { const v = db.get(k); if (k === 'settings') { const c = { ...v }; delete c.apiKey; out.data[k] = c; } else out.data[k] = v; });
+  const out = { app: 'sakina', version: 1, appVersion: APP_VERSION, exported: new Date().toISOString(), data: {} };
+  db.keys('').forEach(k => {
+    if (LOCAL_ONLY.includes(k)) return;
+    const v = db.get(k);
+    if (k === 'settings') { const c = { ...v }; delete c.apiKey; delete c.serverToken; out.data[k] = c; } else out.data[k] = v;
+  });
+  return out;
+}
+function exportData() {
+  const out = buildBackup();
   const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `sakina-backup-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast('Backup gespeichert');
 }
+function restoreBackup(j, question) {
+  if (!['sakina', 'guter-tag'].includes(j?.app) || !j.data) throw new Error('Das ist kein Sakina-Backup.');
+  if (!confirm(question)) return false;
+  const cur = settings();
+  Object.entries(j.data).forEach(([k, v]) => {
+    if (LOCAL_ONLY.includes(k)) return;
+    if (k === 'settings') db.set(k, { ...v, apiKey: cur.apiKey, serverToken: cur.serverToken }); else db.set(k, v);
+  });
+  applyTheme(); closeOverlay(); render(); toast('Backup eingespielt ✓');
+  return true;
+}
 async function importBackup(file) {
   if (!file) return;
+  try { restoreBackup(JSON.parse(await file.text()), 'Backup einspielen? Einträge mit gleichem Datum werden überschrieben.'); }
+  catch (e) { toast(e.message); }
+}
+
+/* ---------- Sicherung auf dem eigenen Server (gleiche Adresse, api/…) ---------- */
+const srvHeaders = () => { const t = settings().serverToken; return t ? { 'X-Sakina-Token': t } : {}; };
+function serverStatusText() {
+  const st = db.get('srv', {});
+  if (st.ok) return `✓ Zuletzt gesichert: ${new Date(st.ok).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`;
+  if (st.err) return `Noch keine Server-Sicherung (${st.err}).`;
+  return 'Noch keine Server-Sicherung.';
+}
+async function serverBackup(manual = false) {
+  const st = db.get('srv', {});
+  const now = Date.now();
+  if (!manual) {
+    if (location.protocol === 'file:' || !navigator.onLine) return;
+    if (st.ok && now - st.ok < 30 * 60e3) return;          // höchstens alle 30 Minuten
+    if (st.tried && now - st.tried < 60 * 60e3 && !st.ok) return; // kein Server? höchstens stündlich probieren
+  }
+  db.set('srv', { ...st, tried: now });
   try {
-    const j = JSON.parse(await file.text());
-    if (!['sakina', 'guter-tag'].includes(j.app) || !j.data) throw new Error('Das ist kein Sakina-Backup.');
-    if (!confirm('Backup einspielen? Einträge mit gleichem Datum werden überschrieben.')) return;
-    const key = settings().apiKey;
-    Object.entries(j.data).forEach(([k, v]) => { if (k === 'settings') { const c = { ...v, apiKey: key }; db.set(k, c); } else db.set(k, v); });
-    applyTheme(); closeOverlay(); render(); toast('Backup eingespielt ✓');
-  } catch (e) { toast(e.message); }
+    const r = await fetch('api/backup', { method: 'POST', headers: { 'content-type': 'application/json', ...srvHeaders() }, body: JSON.stringify(buildBackup()), cache: 'no-store' });
+    if ([404, 405, 501].includes(r.status)) throw new Error('hier läuft kein Sakina-Server');
+    if (r.status === 401) throw new Error('Server-Token fehlt oder ist falsch');
+    if (!r.ok) throw new Error('Server-Fehler ' + r.status);
+    db.set('srv', { ok: Date.now(), tried: now });
+    if (manual) toast('Auf dem Server gesichert ✓');
+  } catch (e) {
+    db.set('srv', { ...db.get('srv', {}), err: e.message === 'Failed to fetch' ? 'Server nicht erreichbar' : e.message });
+    if (manual) toast(db.get('srv').err);
+  }
+  const el = $('#srvStatus'); if (el) el.textContent = serverStatusText();
+}
+async function serverRestore() {
+  try {
+    const r = await fetch('api/backup/latest', { headers: srvHeaders(), cache: 'no-store' });
+    if (r.status === 401) throw new Error('Server-Token fehlt oder ist falsch');
+    if (r.status === 404) throw new Error('Auf dem Server liegt noch kein Backup (oder hier läuft kein Sakina-Server).');
+    if (!r.ok) throw new Error('Server-Fehler ' + r.status);
+    const j = await r.json();
+    restoreBackup(j, `Backup vom Server einspielen (${j.exported ? new Date(j.exported).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'neuestes'})? Einträge mit gleichem Datum werden überschrieben.`);
+  } catch (e) { toast(e.message === 'Failed to fetch' ? 'Server nicht erreichbar' : e.message); }
 }
 
 /* ================================================================
@@ -966,16 +1026,19 @@ function init() {
       catch (err) { out.textContent = '✗ ' + err.message; }
     }
     else if (g === 'export') exportData();
+    else if (g === 'srvBackup') { readSettingsForm(); serverBackup(true); }
+    else if (g === 'srvRestore') { readSettingsForm(); serverRestore(); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !ov.hidden) closeOverlay(); });
 
   addEventListener('pagehide', flushAll);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) flushAll();
-    else if (S.day !== today()) render();
+    else { if (S.day !== today()) render(); serverBackup(); }
   });
 
   render(false);
+  setTimeout(() => serverBackup(), 1500);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 init();
