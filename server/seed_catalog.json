@@ -7,7 +7,11 @@
    "sets": 3,
    "lo": 8,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "push",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "chest_press",
@@ -16,7 +20,11 @@
    "sets": 3,
    "lo": 10,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "push",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "lateral_raise",
@@ -25,7 +33,11 @@
    "sets": 2,
    "lo": 12,
    "hi": 15,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "shoulders",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "triceps_cable",
@@ -34,7 +46,9 @@
    "sets": 2,
    "lo": 10,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "arms",
+   "loads": []
   },
   {
    "id": "plank",
@@ -43,7 +57,9 @@
    "sets": 3,
    "lo": 30,
    "hi": 45,
-   "kind": "sec"
+   "kind": "sec",
+   "group": "core",
+   "loads": []
   },
   {
    "id": "inverted_row",
@@ -53,7 +69,11 @@
    "lo": 8,
    "hi": 12,
    "kind": "bw",
-   "hint": "An der Stange oder im Smith-Rack, Körper gerade wie ein Brett."
+   "hint": "An der Stange oder im Smith-Rack, Körper gerade wie ein Brett.",
+   "group": "pull",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "cable_row",
@@ -62,7 +82,11 @@
    "sets": 3,
    "lo": 10,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "pull",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "face_pull",
@@ -71,7 +95,11 @@
    "sets": 3,
    "lo": 12,
    "hi": 15,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "pull",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "biceps_curl",
@@ -80,7 +108,9 @@
    "sets": 2,
    "lo": 10,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "arms",
+   "loads": []
   },
   {
    "id": "dead_bug",
@@ -90,7 +120,9 @@
    "lo": 8,
    "hi": 8,
    "kind": "bw",
-   "side": true
+   "side": true,
+   "group": "core",
+   "loads": []
   },
   {
    "id": "box_squat",
@@ -100,7 +132,12 @@
    "lo": 8,
    "hi": 12,
    "kind": "kg",
-   "hint": "Kurzhantel vor der Brust, kontrolliert auf den Kasten setzen."
+   "hint": "Kurzhantel vor der Brust, kontrolliert auf den Kasten setzen.",
+   "group": "legs",
+   "loads": [
+    "knee",
+    "back"
+   ]
   },
   {
    "id": "hip_thrust",
@@ -109,7 +146,9 @@
    "sets": 3,
    "lo": 10,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "legs",
+   "loads": []
   },
   {
    "id": "leg_curl",
@@ -118,7 +157,11 @@
    "sets": 2,
    "lo": 10,
    "hi": 12,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "legs",
+   "loads": [
+    "knee"
+   ]
   },
   {
    "id": "calf_raise",
@@ -127,7 +170,9 @@
    "sets": 2,
    "lo": 12,
    "hi": 15,
-   "kind": "kg"
+   "kind": "kg",
+   "group": "legs",
+   "loads": []
   },
   {
    "id": "side_plank",
@@ -137,7 +182,11 @@
    "lo": 20,
    "hi": 30,
    "kind": "sec",
-   "side": true
+   "side": true,
+   "group": "core",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "bird_dog",
@@ -147,7 +196,9 @@
    "lo": 8,
    "hi": 8,
    "kind": "bw",
-   "side": true
+   "side": true,
+   "group": "core",
+   "loads": []
   },
   {
    "id": "hanging_knee",
@@ -156,7 +207,11 @@
    "sets": 3,
    "lo": 8,
    "hi": 12,
-   "kind": "bw"
+   "kind": "bw",
+   "group": "core",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "farmers_walk",
@@ -165,7 +220,11 @@
    "sets": 3,
    "lo": 30,
    "hi": 30,
-   "kind": "dist"
+   "kind": "dist",
+   "group": "carry",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "pallof_press",
@@ -175,7 +234,60 @@
    "lo": 10,
    "hi": 10,
    "kind": "kg",
-   "side": true
+   "side": true,
+   "group": "core",
+   "loads": []
+  },
+  {
+   "id": "mcgill_curlup",
+   "category": "gym",
+   "name": "Curl-up (McGill)",
+   "sets": 3,
+   "lo": 6,
+   "hi": 10,
+   "kind": "bw",
+   "hint": "Ein Bein angewinkelt, Hände unter dem unteren Rücken, Kopf und Schultern nur leicht anheben, kurz halten.",
+   "group": "core",
+   "loads": []
+  },
+  {
+   "id": "side_leg_raise",
+   "category": "gym",
+   "name": "Seitliches Beinheben im Liegen",
+   "sets": 2,
+   "lo": 12,
+   "hi": 15,
+   "kind": "bw",
+   "side": true,
+   "hint": "Auf der Seite liegen, Kopf auf dem Arm ablegen, oberes Bein gestreckt langsam heben.",
+   "group": "core",
+   "loads": []
+  },
+  {
+   "id": "glute_bridge",
+   "category": "gym",
+   "name": "Glute Bridge beidbeinig",
+   "sets": 3,
+   "lo": 12,
+   "hi": 15,
+   "kind": "bw",
+   "hint": "Becken langsam heben, oben kurz halten, Rücken nicht ins Hohlkreuz.",
+   "group": "core",
+   "loads": []
+  },
+  {
+   "id": "back_ext_light",
+   "category": "gym",
+   "name": "Rückenstrecken leicht (Bank)",
+   "sets": 2,
+   "lo": 10,
+   "hi": 12,
+   "kind": "bw",
+   "hint": "Nur bis zur geraden Linie, langsam, ohne Schwung.",
+   "group": "core",
+   "loads": [
+    "back"
+   ]
   },
   {
    "id": "glute_bridge_sl",
@@ -186,49 +298,67 @@
    "hi": 10,
    "kind": "bw",
    "side": true,
-   "sideWord": "pro Bein"
+   "sideWord": "pro Bein",
+   "group": "legs",
+   "loads": []
   },
   {
    "id": "catcow",
    "category": "home",
    "name": "Katze-Kuh, 10× langsam",
    "kind": "check",
-   "sort": 0
+   "sort": 0,
+   "group": "home",
+   "loads": []
   },
   {
    "id": "birddog",
    "category": "home",
    "name": "Bird Dog, 2×8 pro Seite",
    "kind": "check",
-   "sort": 1
+   "sort": 1,
+   "group": "home",
+   "loads": []
   },
   {
    "id": "deadbug",
    "category": "home",
    "name": "Dead Bug, 2×8 pro Seite",
    "kind": "check",
-   "sort": 2
+   "sort": 2,
+   "group": "home",
+   "loads": []
   },
   {
    "id": "bridge",
    "category": "home",
    "name": "Glute Bridge, 2×12",
    "kind": "check",
-   "sort": 3
+   "sort": 3,
+   "group": "home",
+   "loads": []
   },
   {
    "id": "sideknee",
    "category": "home",
    "name": "Seitstütz auf den Knien, 2×20 s pro Seite",
    "kind": "check",
-   "sort": 4
+   "sort": 4,
+   "group": "home",
+   "loads": [
+    "shoulder"
+   ]
   },
   {
    "id": "child",
    "category": "home",
    "name": "Kindhaltung, 1 Minute atmen",
    "kind": "check",
-   "sort": 5
+   "sort": 5,
+   "group": "home",
+   "loads": [
+    "knee"
+   ]
   }
  ],
  "ladders": [
@@ -264,6 +394,10 @@
      "hi": 10,
      "kind": "bw"
     }
+   ],
+   "group": "push",
+   "loads": [
+    "shoulder"
    ]
   },
   {
@@ -298,6 +432,10 @@
      "hi": 6,
      "kind": "bw"
     }
+   ],
+   "group": "pull",
+   "loads": [
+    "shoulder"
    ]
   }
  ],

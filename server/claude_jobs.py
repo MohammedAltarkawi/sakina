@@ -210,6 +210,7 @@ def job_analysis(trigger="app"):
                    FROM day_entries WHERE date BETWEEN ? AND ? ORDER BY date""", iso(frm), iso(to))
     acts = rows("SELECT date, type art, unit einheit, feel koerpergefuehl, minutes minuten, knee knie, stage stufe FROM activities WHERE done=1 AND date BETWEEN ? AND ? ORDER BY date", iso(frm), iso(to))
     data = {"zeitraum": f"{frm.strftime('%d.%m.')}–{to.strftime('%d.%m.%Y')}", "tage": days, "bewegung": acts,
+            "hat_gezwickt": complaints_summary(iso(frm)),
             "gym_fortschritt_4_wochen": exercise_progress(iso(t - dt.timedelta(days=28)))}
     if not days and not acts:
         raise JobError("In den letzten 7 Tagen gibt es noch keine Einträge")
@@ -237,7 +238,7 @@ FORBIDDEN = re.compile(r"(über ?kopf|overhead|military|arnold|schulterdrück|na
 
 def job_exercises(trigger="app"):
     t = today()
-    cat = rows("SELECT id, name, category, kind, status FROM exercises WHERE status!='archived'")
+    cat = rows("SELECT id, name, category, kind, status, loads AS belastet, muscle_group AS gruppe FROM exercises WHERE status!='archived'")
     units = {r["id"]: {"name": r["name"], "uebungen": json.loads(r["exercise_ids"])} for r in rows("SELECT * FROM units")}
     since = iso(t - dt.timedelta(days=56))
     feel = rows("SELECT unit, ROUND(AVG(feel),1) gefuehl, COUNT(*) n FROM activities WHERE type='gym' AND done=1 AND date>=? GROUP BY unit", since)
@@ -246,22 +247,24 @@ def job_exercises(trigger="app"):
     jog = (sync.get_doc("jog", {}) or {}).get("stage")
     data = {"katalog": cat, "einheiten": units, "verlauf_8_wochen": exercise_progress(since), "gefuehl_pro_einheit": feel,
             "stufen": {"liegestuetz": ladders.get("push", 1), "klimmzug": ladders.get("pull", 1), "joggen": jog},
-            "knie_hat_beim_joggen_gezwickt": knee}
+            "knie_hat_beim_joggen_gezwickt": knee, "beschwerden_8_wochen": complaints_summary(since)}
     j = run_claude(prompt("exercises"), json.dumps(data, ensure_ascii=False, default=str))
     existing = {r["id"] for r in rows("SELECT id FROM exercises")}
     names = {r["name"].lower() for r in rows("SELECT name FROM exercises")}
     added, skipped = [], []
+    sensitive = sensitive_regions(iso(t - dt.timedelta(days=28)))
     with db.tx() as c:
         for p in (j.get("proposals") or [])[:3]:
-            ok, why = check_proposal(p, existing, names)
+            ok, why = check_proposal(p, existing, names, sensitive)
             if not ok:
                 skipped.append(f"{p.get('name', '?')}: {why}")
                 continue
-            c.execute("""INSERT INTO exercises(id,category,name,kind,sets,lo,hi,side,hint,status,source,reason,suggested_unit,sort,created_at,updated_at)
-                         VALUES(?,?,?,?,?,?,?,?,?,'proposed','claude',?,?,1000,?,?)""",
+            grp = p.get("group") if p.get("group") in ("push", "pull", "legs", "core", "arms", "shoulders", "carry") else ("home" if p["category"] == "home" else "core")
+            c.execute("""INSERT INTO exercises(id,category,name,kind,sets,lo,hi,side,hint,status,source,reason,suggested_unit,sort,loads,muscle_group,created_at,updated_at)
+                         VALUES(?,?,?,?,?,?,?,?,?,'proposed','claude',?,?,1000,?,?,?,?)""",
                       (p["id"], p["category"], p["name"].strip(), p["kind"], int(p.get("sets") or 3), int(p.get("lo") or 8),
                        int(p.get("hi") or 12), 1 if p.get("side") else 0, str(p.get("hint") or "")[:200], str(p.get("reason") or "")[:300],
-                       p.get("suggested_unit") if p["category"] == "gym" else None, db.now_ms(), db.now_ms()))
+                       p.get("suggested_unit") if p["category"] == "gym" else None, ",".join(p.get("loads") or []), grp, db.now_ms(), db.now_ms()))
             added.append(p["name"])
         body = {"summary": str(j.get("summary", "")), "good": [], "ideas": [f"Neu vorgeschlagen: {n}" for n in added] or ["Diesmal keine neuen Übungen – passt gerade so."],
                 "focus": "", "skipped": skipped}
@@ -272,7 +275,29 @@ def job_exercises(trigger="app"):
     return f"exercises:{len(added)}"
 
 
-def check_proposal(p, existing, names):
+REGION_DE = {"shoulder": "Schulter", "knee": "Knie", "back": "Rücken"}
+
+
+def complaints_summary(since):
+    """Wie oft welche Stelle gezwickt hat und welche Übungen deshalb ersetzt/ausgelassen wurden."""
+    out = {}
+    for r in rows("SELECT region, COUNT(DISTINCT date) tage FROM complaints WHERE date>=? AND region IS NOT NULL GROUP BY region", since):
+        out[REGION_DE.get(r["region"], r["region"])] = {"tage": r["tage"]}
+    names = {e["id"]: e["name"] for e in rows("SELECT id, name FROM exercises")}
+    for r in rows("""SELECT region, action, exercise_id, replacement_id, COUNT(*) n FROM complaints
+                     WHERE date>=? AND action IN ('swap','skip') GROUP BY region, action, exercise_id, replacement_id""", since):
+        reg = REGION_DE.get(r["region"], "anderes")
+        out.setdefault(reg, {"tage": 0}).setdefault("uebungen", []).append(
+            {"uebung": names.get(r["exercise_id"], r["exercise_id"]), "aktion": "ersetzt" if r["action"] == "swap" else "ausgelassen",
+             "durch": names.get(r["replacement_id"]) if r["replacement_id"] else None, "mal": r["n"]})
+    return out
+
+
+def sensitive_regions(since, min_days=2):
+    return {r["region"] for r in rows("SELECT region FROM complaints WHERE date>=? AND region IS NOT NULL GROUP BY region HAVING COUNT(DISTINCT date)>=?", since, min_days)}
+
+
+def check_proposal(p, existing, names, sensitive=frozenset()):
     if not isinstance(p, dict):
         return False, "kein Objekt"
     pid, name = str(p.get("id", "")), str(p.get("name", ""))
@@ -289,6 +314,13 @@ def check_proposal(p, existing, names):
         return False, "nicht gelenkschonend"
     if p["category"] == "gym" and p.get("suggested_unit") not in ("A", "B", "C", "D"):
         return False, "Einheit"
+    if not isinstance(p.get("loads"), list):
+        return False, "Belastung fehlt"
+    loads = p["loads"]
+    if any(l not in REGION_DE for l in loads):
+        return False, "Belastung unklar"
+    if set(loads) & set(sensitive):
+        return False, "belastet eine Stelle, die gerade öfter zwickt"
     try:
         sets, lo, hi = int(p.get("sets") or 3), int(p.get("lo") or 8), int(p.get("hi") or 12)
     except (TypeError, ValueError):

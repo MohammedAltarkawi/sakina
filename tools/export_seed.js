@@ -7,8 +7,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'data.js'), 'utf8') + '\n;global
 const d = ctx.__d;
 const seed = { exercises: [], ladders: [], units: [], dishes: [], plan: d.START_PLAN, facts: d.BUILTIN_FACTS };
 for (const [id, e] of Object.entries(d.EX)) seed.exercises.push({ id, category: 'gym', ...e });
-d.HOME_ITEMS.forEach((h, i) => seed.exercises.push({ id: h.id, category: 'home', name: h.n, kind: 'check', sort: i }));
-for (const [id, l] of Object.entries(d.LADDERS)) seed.ladders.push({ id, name: l.name, stages: l.stages });
+d.HOME_ITEMS.forEach((h, i) => seed.exercises.push({ id: h.id, category: 'home', name: h.n, kind: 'check', sort: i, group: 'home', loads: h.loads || [] }));
+for (const [id, l] of Object.entries(d.LADDERS)) seed.ladders.push({ id, name: l.name, stages: l.stages, group: l.group, loads: l.loads });
 for (const [id, u] of Object.entries(d.UNITS)) seed.units.push({ id, ...u });
 d.START_PLAN.meals.forEach(m => { if (/mittag|abend/i.test(m.slot)) seed.dishes.push({ name: d.START_PLAN.dishes[/mittag/i.test(m.slot) ? 0 : 1], slot: m.slot, description: m.what, protein: m.protein }); });
 fs.writeFileSync(path.join(root, 'server/seed_catalog.json'), JSON.stringify(seed, null, 1));

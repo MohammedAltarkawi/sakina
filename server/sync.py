@@ -127,13 +127,30 @@ def _day(c, date, v):
                v.get("proud") or None, v.get("soul"), v.get("soulWhat") or None, _int(v.get("water")),
                1 if e.get("fr") else 0, 1 if e.get("mi") else 0, 1 if e.get("ab") else 0, 1 if e.get("sh") else 0,
                _int(h.get("steps")), _num(h.get("sleepH")), _int(h.get("rhr")), db.now_ms()))
+    c.execute("DELETE FROM complaints WHERE date=? AND source='day'", (date,))
+    for r in v.get("sore") or []:
+        if r in REGIONS:
+            c.execute("INSERT INTO complaints(date,region,action,source) VALUES(?,?,'checkin','day')", (date, r))
+
+
+REGIONS = {"shoulder", "knee", "back"}
 
 
 def _acts(c, date, items):
     c.execute("DELETE FROM sets WHERE date=?", (date,))
     c.execute("DELETE FROM activities WHERE date=?", (date,))
+    c.execute("DELETE FROM complaints WHERE date=? AND source='acts'", (date,))
     for x in items if isinstance(items, list) else []:
-        known = {"type", "unit", "done", "feel", "minutes", "laps", "knee", "stage", "sets", "stages", "ts"}
+        for orig, sw in (x.get("swaps") or {}).items():
+            if isinstance(sw, dict):
+                c.execute("INSERT INTO complaints(date,region,action,exercise_id,replacement_id,source) VALUES(?,?,'swap',?,?,'acts')",
+                          (date, sw.get("reason") if sw.get("reason") in REGIONS else None, orig, sw.get("to")))
+        for orig, reason in (x.get("skips") or {}).items():
+            c.execute("INSERT INTO complaints(date,region,action,exercise_id,source) VALUES(?,?,'skip',?,'acts')",
+                      (date, reason if reason in REGIONS else None, orig))
+        if x.get("type") == "jog" and x.get("knee") == "pain":
+            c.execute("INSERT INTO complaints(date,region,action,source) VALUES(?,'knee','jog_knee','acts')", (date,))
+        known = {"type", "unit", "done", "feel", "minutes", "laps", "knee", "stage", "sets", "stages", "ts", "swaps", "skips"}
         extra = {k: v for k, v in x.items() if k not in known}
         done = 1 if (x.get("sets") if x.get("type") == "gym" else x.get("done")) else 0
         cur = c.execute("""INSERT INTO activities(date,type,unit,done,feel,minutes,laps,knee,stage,extra)

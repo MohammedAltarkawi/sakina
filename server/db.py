@@ -83,6 +83,16 @@ MIGRATIONS = [
       status TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER,
       error TEXT, result_ref TEXT, input_chars INTEGER, output_chars INTEGER);
     """,
+    # v2: Belastung (Schulter/Knie/Rücken) + Muskelgruppe pro Übung, Beschwerde-Tagebuch
+    """
+    ALTER TABLE exercises ADD COLUMN loads TEXT;          -- z. B. "shoulder,back"
+    ALTER TABLE exercises ADD COLUMN muscle_group TEXT;   -- push | pull | legs | core | arms | shoulders | carry | home
+    CREATE TABLE complaints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, region TEXT,
+      action TEXT NOT NULL,                               -- checkin | swap | skip | jog_knee
+      exercise_id TEXT, replacement_id TEXT, source TEXT NOT NULL);
+    CREATE INDEX complaints_date ON complaints(date);
+    """,
 ]
 
 
@@ -139,6 +149,7 @@ def migrate():
             c.executescript("BEGIN;" + sql + f";PRAGMA user_version={i};COMMIT;")
     if v == 0:
         seed()
+    seed_update()
     os.chmod(db_path(), 0o600)
 
 
@@ -181,6 +192,27 @@ def seed():
             c.execute("INSERT OR IGNORE INTO dishes(name,slot,description,protein,source,created_at) VALUES(?,?,?,?, 'seed', ?)",
                       (d["name"], d["slot"], d["description"], d["protein"], t))
         bump_catalog(c)
+
+
+def seed_update():
+    """Idempotent bei jedem Start: neue Seed-Übungen ergänzen, fehlende Tags setzen.
+    Ändert nie etwas, das schon gesetzt ist (archivierte Übungen bleiben archiviert)."""
+    s = json.loads((HERE / "seed_catalog.json").read_text(encoding="utf-8"))
+    t = now_ms()
+    changed = False
+    with tx() as c:
+        for i, e in enumerate(s["exercises"]):
+            cur = c.execute("""INSERT OR IGNORE INTO exercises(id,category,name,kind,sets,lo,hi,side,side_word,hint,status,source,sort,created_at,updated_at)
+                               VALUES(?,?,?,?,?,?,?,?,?,?, 'active','seed',?,?,?)""",
+                            (e["id"], e["category"], e["name"], e["kind"], e.get("sets"), e.get("lo"), e.get("hi"),
+                             1 if e.get("side") else 0, e.get("sideWord"), e.get("hint"), e.get("sort", i), t, t))
+            changed |= cur.rowcount > 0
+        for e in s["exercises"] + s["ladders"]:
+            cur = c.execute("UPDATE exercises SET loads=?, muscle_group=?, updated_at=? WHERE id=? AND loads IS NULL",
+                            (",".join(e.get("loads") or []), e.get("group"), t, e["id"]))
+            changed |= cur.rowcount > 0
+        if changed:
+            bump_catalog(c)
 
 
 # ---------------------------------------------------------------- Katalog lesen

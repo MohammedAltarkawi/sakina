@@ -96,16 +96,18 @@ function applyCatalog() {
   const c = db.get('catalog');
   if (!c || !Array.isArray(c.exercises)) return;
   const active = c.exercises.filter(e => e.status === 'active');
+  const tags = e => ({ ...(e.loads != null ? { loads: String(e.loads).split(',').filter(Boolean) } : {}), ...(e.muscle_group ? { group: e.muscle_group } : {}) });
   active.filter(e => e.category === 'gym' && e.kind !== 'ladder').forEach(e => {
     EX[e.id] = { name: e.name, sets: e.sets || 3, lo: e.lo || 8, hi: e.hi || 12, kind: e.kind, side: !!e.side,
-      ...(e.side_word ? { sideWord: e.side_word } : {}), ...(e.hint ? { hint: e.hint } : {}), ...(e.source === 'claude' ? { byClaude: true } : {}) };
+      ...(e.side_word ? { sideWord: e.side_word } : {}), ...(e.hint ? { hint: e.hint } : {}), ...(e.source === 'claude' ? { byClaude: true } : {}),
+      ...(EX[e.id] ? { loads: EX[e.id].loads, group: EX[e.id].group } : {}), ...tags(e) };
   });
   Object.entries(c.ladders || {}).forEach(([id, stages]) => {
     const e = c.exercises.find(x => x.id === id);
-    if (stages.length) LADDERS[id] = { name: e?.name || LADDERS[id]?.name || id, stages };
+    if (stages.length) LADDERS[id] = { ...(LADDERS[id] || {}), name: e?.name || LADDERS[id]?.name || id, stages, ...(e ? tags(e) : {}) };
   });
   (c.units || []).forEach(u => { UNITS[u.id] = { name: u.name, sub: u.sub, ex: u.ex.filter(id => EX[id] || LADDERS[id]) }; });
-  const home = active.filter(e => e.category === 'home').map(e => ({ id: e.id, n: e.sets ? `${e.name}, ${e.sets}×${e.lo}${e.side ? ' pro Seite' : ''}` : e.name }));
+  const home = active.filter(e => e.category === 'home').map(e => ({ id: e.id, n: e.sets ? `${e.name}, ${e.sets}×${e.lo}${e.side ? ' pro Seite' : ''}` : e.name, ...tags(e) }));
   if (home.length) HOME_ITEMS.splice(0, HOME_ITEMS.length, ...home);
 }
 

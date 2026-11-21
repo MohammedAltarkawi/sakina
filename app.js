@@ -1,7 +1,7 @@
 'use strict';
 /* Sakina – App-Logik */
 
-const APP_VERSION = 'v5 · Datenbank & Claude';
+const APP_VERSION = 'v6 · Schonen & Ersetzen';
 
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -169,7 +169,7 @@ function renderBewegung() {
     const view = { gym: gymView, home: homeView, jog: jogView, box: () => simpleView('box'), swim: () => simpleView('swim'), relax: () => simpleView('relax') }[S.move];
     h += `<section class="card" id="plan">${view()}<p class="ortho">⚠️ ${ORTHO_HINT}</p></section>`;
   }
-  h += analysisCard() + proposalsCard() + weighView() + reviewView() + importView();
+  h += analysisCard() + proposalsCard() + complaintsCard() + weighView() + reviewView() + importView();
   return h;
 }
 
@@ -278,9 +278,19 @@ function gymRecommend() {
   const legsY = y.some(x => x.type === 'gym' && x.unit === 'C' && hasSets(x));
   let extra = '';
   if (unit === 'C' && (jogY || legsY)) { unit = 'D'; extra = ` Gestern ${jogY ? 'warst du joggen' : 'waren die Beine dran'}, deshalb heute nicht Beine.`; }
+  // Zwickt heute etwas? Dann die Einheit, die diese Stelle am wenigsten belastet.
+  const sore = soreToday();
+  if (sore.length) {
+    const hits = u => UNITS[u].ex.filter(id => exLoads(id).some(r => sore.includes(r))).length;
+    const best = order.filter(u => u !== last?.unit && !(u === 'C' && (jogY || legsY))).sort((a, b) => hits(a) - hits(b))[0];
+    if (best && hits(best) < hits(unit)) {
+      extra += ` Eigentlich wäre ${UNITS[unit].name} dran, aber weil heute ${sore.map(regionName).join(' und ')} zwickt, ist ${UNITS[best].name} schonender.`;
+      unit = best;
+    }
+  }
   const reason = last
     ? `Letztes Gym: ${UNITS[last.unit].name} (${fmtShort(last.d)}). Heute passt ${UNITS[unit].name}.${extra}`
-    : `Noch kein Gym eingetragen. Fang ganz entspannt mit ${UNITS[unit].name} an.${extra}`;
+    : `Noch kein Gym eingetragen. Heute passt ${UNITS[unit].name}.${extra}`;
   return { unit, reason };
 }
 
@@ -289,11 +299,17 @@ function setInput(id, i, f, cur, last, label) {
     value="${esc(cur || '')}" ${i === 0 ? `data-old="${esc(cur || '')}"` : ''} placeholder="${esc(last ? fmtNum(num(last)) : '')}" aria-label="Satz ${i + 1}, ${label}"><span>${label}</span></label>`;
 }
 
-function exBlock(id, item, notes) {
+function exBlock(id, item, notes, slot = { orig: id, id }) {
   const sp = exSpec(id); const F = FIELDS[sp.kind];
   const last = lastSets(id, sp.stage); const cur = (item.sets || {})[id] || [];
   const target = `${sp.sets}× ${sp.lo === sp.hi ? sp.lo : sp.lo + '–' + sp.hi}${F.unit ? ' ' + F.unit : ''}${sp.side ? ' ' + (sp.sideWord || 'pro Seite') : ''}`;
-  let h = `<div class="ex" data-ex="${id}"><div class="ex-head"><h4>${esc(sp.name)}${sp.byClaude ? ' <span class="badge-new">✨ neu</span>' : ''}</h4><span class="target">${target}</span></div>`;
+  const swapped = slot.orig !== id;
+  let h = `<div class="ex ${swapped ? 'ex-swapped' : ''}" data-ex="${id}" data-orig="${slot.orig}" ${swapped ? `data-reason="${esc(slot.reason || '')}" data-auto="${slot.auto ? 1 : 0}"` : ''}>`;
+  if (swapped) h += `<p class="swap-note">↔ statt <b>${esc(exName(slot.orig))}</b>${slot.reason ? ' · wegen ' + regionName(slot.reason) : ''}</p>`;
+  h += `<div class="ex-head"><h4>${esc(sp.name)}${sp.byClaude ? ' <span class="badge-new">✨ neu</span>' : ''}</h4><span class="target">${target}</span></div>
+    <div class="swap-row"><button class="link-btn" data-act="swapOpen" data-orig="${slot.orig}" aria-expanded="${S.swapOpen === slot.orig}">↔ ${swapped ? 'Andere Übung' : 'Ersetzen / auslassen'}</button>
+    ${swapped ? `<button class="link-btn" data-act="swapUndo" data-orig="${slot.orig}">Original machen</button>` : ''}</div>
+    ${S.swapOpen === slot.orig ? swapPicker(slot) : ''}`;
   if (sp.ladder) {
     const L = LADDERS[sp.ladder];
     h += `<div class="ladder" role="group" aria-label="Stufe wählen">${L.stages.map((s, i) =>
@@ -313,6 +329,129 @@ function exBlock(id, item, notes) {
   return h;
 }
 
+/* ---------- Schonen & Ersetzen ---------- */
+const exLoads = id => EX[id]?.loads || LADDERS[id]?.loads || [];
+const exGroup = id => EX[id]?.group || LADDERS[id]?.group || 'core';
+const exName = id => EX[id]?.name || LADDERS[id]?.name || id;
+const regionName = k => REGIONS.find(r => r.k === k)?.n || 'anderem Grund';
+const soreToday = () => dayDoc().sore || [];
+
+function alternatives(orig, used, avoid) {
+  const g = exGroup(orig);
+  const score = x => exGroup(x) === g ? 0 : exGroup(x) === 'core' ? 1 : 2;
+  // Übungen ohne bekannte Belastung (loads fehlt) nie als Ersatz nehmen – lieber vorsichtig
+  return Object.keys(EX).filter(x => !used.has(x) && x !== orig && Array.isArray(EX[x].loads) && !exLoads(x).some(r => avoid.includes(r)))
+    .sort((a, b) => score(a) - score(b) || EX[a].name.localeCompare(EX[b].name, 'de'));
+}
+
+/* Welche Übung steht heute an welcher Stelle der Einheit? (Ersatz, ausgelassen, Original) */
+function unitPlan(U, item) {
+  const ids = UNITS[U].ex, sore = soreToday(), used = new Set(ids);
+  const swaps = item.swaps || {}, skips = item.skips || {}, keep = item.keep || {};
+  Object.values(swaps).forEach(s => used.add(s.to));
+  return ids.map(orig => {
+    if (skips[orig]) return { orig, skip: skips[orig] };
+    if (swaps[orig] && (EX[swaps[orig].to] || LADDERS[swaps[orig].to])) return { orig, id: swaps[orig].to, reason: swaps[orig].reason, auto: swaps[orig].auto };
+    const hit = !keep[orig] && exLoads(orig).find(r => sore.includes(r));
+    if (hit) {
+      const alt = alternatives(orig, used, sore)[0];
+      if (alt) { used.add(alt); return { orig, id: alt, reason: hit, auto: true }; }
+      return { orig, skip: hit, auto: true };
+    }
+    return { orig, id: orig };
+  });
+}
+
+function swapPicker(slot) {
+  const reason = S.swapReason || slot.reason || soreToday()[0] || 'shoulder';
+  const U = S.gymUnit, item = gymItem(U);
+  const used = new Set([...UNITS[U].ex, ...Object.values(item.swaps || {}).map(s => s.to)]);
+  const avoid = [...new Set([reason, ...soreToday()])].filter(r => REGIONS.some(x => x.k === r));
+  const alts = alternatives(slot.orig, used, avoid).slice(0, 4);
+  return `<div class="picker"><p class="small"><b>Warum?</b></p><div class="chips">${[...REGIONS, { k: 'other', n: 'Anderes', e: '·' }].map(r =>
+    `<button class="chip ${reason === r.k ? 'on' : ''}" data-act="swapReason" data-r="${r.k}" aria-pressed="${reason === r.k}">${r.e} ${r.n}</button>`).join('')}</div>
+    <p class="small"><b>Stattdessen</b> <span class="muted">(belastet ${avoid.map(regionName).join('/') || 'nichts davon'} nicht)</span></p>
+    <ul class="alt-list">${alts.map(a => `<li><button class="btn small alt" data-act="swapPick" data-orig="${slot.orig}" data-to="${a}" data-r="${reason}">${esc(EX[a].name)} <span class="muted small">${GROUP_NAMES[exGroup(a)] || ''}</span></button></li>`).join('') || '<li class="muted small">Keine passende Alternative im Katalog.</li>'}</ul>
+    <div class="row"><button class="btn small" data-act="skipEx" data-orig="${slot.orig}" data-r="${reason}">Heute auslassen</button><button class="link-btn" data-act="swapClose">Abbrechen</button></div></div>`;
+}
+
+const gymItem = U => acts(today()).find(x => x.type === 'gym' && x.unit === U) || { type: 'gym', unit: U, sets: {}, feel: null };
+function updateGymItem(U, fn) {
+  saveGym();
+  const t = today(), list = acts(t);
+  let it = list.find(x => x.type === 'gym' && x.unit === U);
+  if (!it) { it = { type: 'gym', unit: U, sets: {}, stages: {}, feel: null }; list.push(it); }
+  fn(it);
+  it.ts = Date.now();
+  db.set('a_' + t, list);
+}
+
+function soreBar(context) {
+  const s = soreToday();
+  const hint = { gym: 'Übungen, die das belasten, ersetze ich heute automatisch.', home: 'Übungen, die das belasten, sind markiert.', jog: '' }[context] || '';
+  return `<div class="sore"><p class="q">Was zwickt heute?</p><div class="chips" role="group" aria-label="Was zwickt heute">${REGIONS.map(r =>
+    `<button class="chip ${s.includes(r.k) ? 'on warn' : ''}" data-act="sore" data-r="${r.k}" aria-pressed="${s.includes(r.k)}">${r.e} ${r.n}</button>`).join('')}</div>
+    ${s.length ? `<p class="small muted">${hint} Nur was schmerzfrei geht.</p>` : ''}</div>`;
+}
+
+function skipBlock(slot) {
+  return `<div class="ex ex-skip" data-orig="${slot.orig}" data-skip="${esc(slot.skip)}"><p>⏭️ <b>${esc(exName(slot.orig))}</b> heute ausgelassen <span class="muted">(${regionName(slot.skip)})</span></p>
+    <button class="link-btn" data-act="unskip" data-orig="${slot.orig}">Doch machen</button></div>`;
+}
+
+/* ---------- Beschwerde-Tagebuch (für den Orthopäden) ---------- */
+function complaintsReport(days = 56) {
+  const to = today(), from = addDays(to, -(days - 1));
+  const regions = {}, exs = {}, jogKnee = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    (db.get('d_' + d)?.sore || []).forEach(r => { (regions[r] = regions[r] || new Set()).add(d); });
+    acts(d).forEach(x => {
+      Object.entries(x.swaps || {}).forEach(([o, sw]) => {
+        if (sw.reason) (regions[sw.reason] = regions[sw.reason] || new Set()).add(d);
+        const e = exs[o] = exs[o] || { swap: 0, skip: 0, to: {}, reasons: new Set() };
+        e.swap++; e.to[sw.to] = (e.to[sw.to] || 0) + 1; if (sw.reason) e.reasons.add(sw.reason);
+      });
+      Object.entries(x.skips || {}).forEach(([o, r]) => {
+        if (REGIONS.some(z => z.k === r)) (regions[r] = regions[r] || new Set()).add(d);
+        const e = exs[o] = exs[o] || { swap: 0, skip: 0, to: {}, reasons: new Set() };
+        e.skip++; if (REGIONS.some(z => z.k === r)) e.reasons.add(r);
+      });
+      if (x.type === 'jog' && x.knee === 'pain') { jogKnee.push(d); (regions.knee = regions.knee || new Set()).add(d); }
+    });
+  }
+  return { from, to, regions, exs, jogKnee };
+}
+function complaintsText(rep) {
+  const lines = [`Beschwerden ${fmtDM(rep.from)}–${fmtDM(rep.to)}${rep.to.slice(0, 4)} (aus meiner Trainings-App)`];
+  REGIONS.forEach(r => {
+    const ds = [...(rep.regions[r.k] || [])].sort();
+    if (!ds.length) return;
+    lines.push('', `${r.n}: an ${ds.length} ${ds.length === 1 ? 'Tag' : 'Tagen'} (zuletzt ${fmtShort(ds[ds.length - 1])})`);
+    Object.entries(rep.exs).filter(([, e]) => e.reasons.has(r.k)).forEach(([id, e]) => {
+      const parts = [];
+      if (e.swap) parts.push(`${e.swap}× ersetzt (durch ${Object.keys(e.to).map(exName).join(', ')})`);
+      if (e.skip) parts.push(`${e.skip}× ausgelassen`);
+      lines.push(`  – ${exName(id)}: ${parts.join(', ')}`);
+    });
+    if (r.k === 'knee' && rep.jogKnee.length) lines.push(`  – Beim Joggen gezwickt: ${rep.jogKnee.length}× (${rep.jogKnee.map(fmtDM).join(', ')})`);
+  });
+  const other = Object.entries(rep.exs).filter(([, e]) => !e.reasons.size);
+  if (other.length) lines.push('', 'Aus anderem Grund ersetzt/ausgelassen: ' + other.map(([id]) => exName(id)).join(', '));
+  const note = String(db.get('doctorNote', '') || '').trim();
+  if (note) lines.push('', 'Notiz: ' + note);
+  return lines.join('\n');
+}
+function complaintsCard() {
+  const rep = complaintsReport();
+  const any = Object.keys(rep.regions).length || Object.keys(rep.exs).length;
+  if (!any) return '';
+  return `<section class="card"><h3>🩺 Für den Orthopäden</h3><p class="small muted">Was in den letzten 8 Wochen gezwickt hat und was du deshalb ersetzt oder ausgelassen hast.</p>
+    <div class="kacheln">${REGIONS.map(r => `<div><b>${(rep.regions[r.k] || new Set()).size}</b><span>Tage ${r.n}</span></div>`).join('')}</div>
+    <details class="sub" id="det-complaints"><summary>Ganze Übersicht</summary><pre class="report">${esc(complaintsText(rep))}</pre></details>
+    <label class="lbl">Notiz für den Arzt <span class="muted">(optional)</span><textarea data-inp="doctorNote" rows="2" placeholder="z. B. Gefühl, als würde die Schulter rausspringen, vor allem beim Boxen">${esc(db.get('doctorNote', '') || '')}</textarea></label>
+    <button class="btn primary wide" data-act="shareReport">Übersicht teilen / kopieren</button></section>`;
+}
+
 function gymView() {
   const t = today(), rec = gymRecommend();
   if (!S.gymUnit) {
@@ -320,12 +459,12 @@ function gymView() {
     S.gymUnit = g.length ? g[g.length - 1].unit : rec.unit;
   }
   const U = S.gymUnit;
-  const item = acts(t).find(x => x.type === 'gym' && x.unit === U) || { sets: {}, feel: null };
+  const item = gymItem(U);
   const notes = db.get('notes', {});
   let h = `<h3>🏋️ Gym</h3><p class="muted">Calisthenics-orientiert und schonend für Rücken, Knie und Schulter.</p>
     <div class="units">${Object.keys(UNITS).map(u => `<button class="unit ${u === U ? 'on' : ''}" data-act="unit" data-u="${u}" aria-pressed="${u === U}"><b>${u}</b><span>${UNITS[u].name}</span>${u === rec.unit ? '<em>★ empfohlen</em>' : ''}</button>`).join('')}</div>
-    <p class="reason">${esc(rec.reason)}</p><p class="unit-sub"><b>${U} ${UNITS[U].name}</b> · ${UNITS[U].sub}</p>`;
-  h += UNITS[U].ex.map(id => exBlock(id, item, notes)).join('');
+    <p class="reason">${esc(rec.reason)}</p>${soreBar('gym')}<p class="unit-sub"><b>${U} ${UNITS[U].name}</b> · ${UNITS[U].sub}</p>`;
+  h += unitPlan(U, item).map(slot => slot.skip ? skipBlock(slot) : exBlock(slot.id, item, notes, slot)).join('');
   h += `<div class="feel"><p class="q">Wie hat sich dein Körper angefühlt?</p>${scaleBtns('gymFeel', U, item.feel, 'Körpergefühl')}</div>
     <p class="saved center" id="gymSaved" aria-live="polite">${hasSets(item) ? '✓ Automatisch gespeichert' : 'Wird automatisch gespeichert, sobald du etwas einträgst.'}</p>`;
   return h;
@@ -342,10 +481,16 @@ function saveGym() {
     $$('input[data-inp=set]', b).forEach(i => { const k = +i.dataset.i; rows[k] = rows[k] || { a: '', b: '' }; rows[k][i.dataset.f] = i.value.trim(); });
     if (rows.some(r => r.a || r.b)) sets[b.dataset.ex] = rows;
   });
-  const stages = {}; UNITS[U].ex.forEach(id => { if (LADDERS[id]) stages[id] = ladderStage(id); });
+  const stages = {}; blocks.forEach(b => { const id = b.dataset.ex; if (LADDERS[id]) stages[id] = ladderStage(id); });
+  // Ersetzungen und Auslassungen so festhalten, wie sie gerade angezeigt werden
+  const swaps = { ...(item?.swaps || {}) }, skips = { ...(item?.skips || {}) };
+  blocks.forEach(b => { if (b.dataset.orig && b.dataset.orig !== b.dataset.ex) swaps[b.dataset.orig] = { to: b.dataset.ex, reason: b.dataset.reason || null, auto: b.dataset.auto === '1' }; });
+  $$('#view .ex-skip[data-orig]').forEach(b => { skips[b.dataset.orig] = b.dataset.skip; });
   if (!item) { if (!Object.keys(sets).length) return; item = { type: 'gym', unit: U, feel: null }; list.push(item); }
   Object.assign(item, { sets, stages, ts: Date.now() });
-  if (!Object.keys(sets).length && !item.feel) list.splice(list.indexOf(item), 1);
+  if (Object.keys(sets).length) { item.swaps = swaps; item.skips = skips; }
+  const hasOther = Object.keys(item.swaps || {}).length || Object.keys(item.skips || {}).length || Object.keys(item.keep || {}).length;
+  if (!Object.keys(sets).length && !item.feel && !hasOther) list.splice(list.indexOf(item), 1);
   db.set('a_' + t, list);
   const el = $('#gymSaved'); if (el) el.textContent = '✓ Automatisch gespeichert';
 }
@@ -356,7 +501,9 @@ function homeView() {
   const custom = String(db.get('homeCustom', '') || '').split('\n').map(s => s.trim()).filter(Boolean);
   const items = [...HOME_ITEMS, ...custom.map(n => ({ id: 'c_' + n, n }))];
   return `<h3>🧘 Zuhause</h3><p class="muted">Rücken & Pilates, ruhig und sauber. Abhaken, was du gemacht hast.</p>
-    <ul class="checks">${items.map(x => `<li><label class="check"><input type="checkbox" data-act="homeCheck" data-id="${esc(x.id)}" ${it.checks?.[x.id] ? 'checked' : ''}><span>${esc(x.n)}</span></label></li>`).join('')}</ul>
+    ${soreBar('home')}
+    <ul class="checks">${items.map(x => { const warn = (x.loads || []).find(r => soreToday().includes(r));
+      return `<li><label class="check"><input type="checkbox" data-act="homeCheck" data-id="${esc(x.id)}" ${it.checks?.[x.id] ? 'checked' : ''}><span>${esc(x.n)}${warn ? ` <span class="warn-tag">heute lieber auslassen (${regionName(warn)})</span>` : ''}</span></label></li>`; }).join('')}</ul>
     <details class="sub"><summary>Eigene Übungen hinzufügen</summary><textarea data-inp="homeCustom" rows="3" placeholder="Eine Übung pro Zeile">${esc(db.get('homeCustom', '') || '')}</textarea><button class="btn small" data-act="rerender">In die Liste übernehmen</button></details>
     ${feelBlock('home', it.feel)}${doneBtn('home', it)}`;
 }
@@ -378,6 +525,7 @@ function simpleView(type) {
 function jogView() {
   const st = db.get('jog', { stage: 1 }).stage || 1, it = getAct('jog');
   return `<h3>🏃 Joggen</h3><p class="muted">Einsteigerplan in 8 Stufen. Heute: <b>Stufe ${st}</b> · ${JOG_STAGES[st - 1]}</p>
+    ${soreBar('jog')}${soreToday().includes('knee') ? '<p class="note-box">Knie empfindlich: heute lieber Schwimmen, Entspannung oder ein ruhiger Spaziergang.</p>' : ''}
     <ol class="jog">${JOG_STAGES.map((s, i) => `<li><button class="${st === i + 1 ? 'on' : ''}" data-act="jogStage" data-s="${i + 1}" aria-pressed="${st === i + 1}"><b>${i + 1}</b> ${s}</button></li>`).join('')}</ol>
     <ul class="tips">${JOG_TIPS.map(x => `<li>${x}</li>`).join('')}</ul>
     <p class="q">War das Knie okay?</p><div class="seg"><button class="${it.knee === 'ok' ? 'on' : ''}" data-act="knee" data-v="ok" aria-pressed="${it.knee === 'ok'}">Ja</button><button class="${it.knee === 'pain' ? 'on' : ''}" data-act="knee" data-v="pain" aria-pressed="${it.knee === 'pain'}">Hat gezwickt</button></div>
@@ -984,6 +1132,42 @@ const ACT = {
   fav(b) { const f = db.get('favs', []), n = b.dataset.n, i = f.indexOf(n); if (i >= 0) f.splice(i, 1); else f.push(n); db.set('favs', f); render(); },
   favDel(b) { db.set('favs', db.get('favs', []).filter(x => x !== b.dataset.n)); render(); },
   newPlan() { generatePlan(); },
+  async shareReport() {
+    flushAll();
+    const text = complaintsText(complaintsReport());
+    try {
+      if (navigator.share) { await navigator.share({ title: 'Beschwerden', text }); return; }
+      await navigator.clipboard.writeText(text); toast('Kopiert. Du kannst es jetzt einfügen.');
+    } catch (e) { if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(text); toast('Kopiert ✓'); } catch { toast('Teilen ging nicht. Text unter „Ganze Übersicht“.'); } } }
+  },
+  sore(b) {
+    saveGym();
+    const doc = dayDoc(), r = b.dataset.r, s = new Set(doc.sore || []);
+    s.has(r) ? s.delete(r) : s.add(r);
+    doc.sore = [...s]; saveDay(doc);
+    // automatische Ersetzungen ohne Einträge für diese Stelle wieder lösen
+    const list = acts(today());
+    list.filter(x => x.type === 'gym').forEach(x => {
+      Object.entries(x.swaps || {}).forEach(([o, sw]) => { if (sw.auto && !s.has(sw.reason) && !(x.sets || {})[sw.to]) delete x.swaps[o]; });
+    });
+    db.set('a_' + today(), list);
+    render();
+  },
+  swapOpen(b) { saveGym(); S.swapOpen = S.swapOpen === b.dataset.orig ? null : b.dataset.orig; S.swapReason = null; render(); },
+  swapClose() { S.swapOpen = null; render(); },
+  swapReason(b) { S.swapReason = b.dataset.r; render(); },
+  swapPick(b) {
+    const { orig, to, r } = b.dataset;
+    updateGymItem(S.gymUnit, it => { it.swaps = { ...(it.swaps || {}), [orig]: { to, reason: r === 'other' ? null : r, auto: false } }; if (it.skips) delete it.skips[orig]; });
+    S.swapOpen = null; render(); toast(`↔ ${EX[to].name}`);
+  },
+  skipEx(b) {
+    const { orig, r } = b.dataset;
+    updateGymItem(S.gymUnit, it => { it.skips = { ...(it.skips || {}), [orig]: r }; if (it.swaps) delete it.swaps[orig]; });
+    S.swapOpen = null; render();
+  },
+  unskip(b) { updateGymItem(S.gymUnit, it => { if (it.skips) delete it.skips[b.dataset.orig]; it.keep = { ...(it.keep || {}), [b.dataset.orig]: true }; }); render(); },
+  swapUndo(b) { updateGymItem(S.gymUnit, it => { if (it.swaps) delete it.swaps[b.dataset.orig]; it.keep = { ...(it.keep || {}), [b.dataset.orig]: true }; }); S.swapOpen = null; render(); },
   job(b) { runServerJob(b.dataset.job); },
   async propAccept(b) {
     const id = b.dataset.id, unit = $('#u_' + CSS.escape(id))?.value;
@@ -1020,6 +1204,7 @@ const INP = {
   actField(el) { const v = el.value.trim(), t = el.dataset.type, f = el.dataset.f; later('af_' + t + f, () => setAct(t, { [f]: v })); },
   pantry(el) { const v = el.value; later('pantry', () => db.set('pantry', v)); },
   wish(el) { const v = el.value; later('wish', () => db.set('wish', v)); },
+  doctorNote(el) { const v = el.value; later('doctorNote', () => db.set('doctorNote', v)); },
 };
 
 function init() {

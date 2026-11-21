@@ -48,31 +48,35 @@ const EMO = Object.fromEntries(MOVES.map(m => [m.k, m.e]));
 /* Gym ------------------------------------------------------------------ */
 /* kind: kg (kg + Wdh.), bw (Wdh.), sec (Sekunden), assist (Hilfe kg + Wdh.), dist (kg + Meter) */
 const EX = {
-  incline_db:   { name: 'Schrägbankdrücken Kurzhantel', sets: 3, lo: 8, hi: 12, kind: 'kg' },
-  chest_press:  { name: 'Brustpresse Maschine', sets: 3, lo: 10, hi: 12, kind: 'kg' },
-  lateral_raise:{ name: 'Seitheben leicht', sets: 2, lo: 12, hi: 15, kind: 'kg' },
-  triceps_cable:{ name: 'Trizepsdrücken Kabel', sets: 2, lo: 10, hi: 12, kind: 'kg' },
-  plank:        { name: 'Plank', sets: 3, lo: 30, hi: 45, kind: 'sec' },
-  inverted_row: { name: 'Rudern im Hang', sets: 3, lo: 8, hi: 12, kind: 'bw', hint: 'An der Stange oder im Smith-Rack, Körper gerade wie ein Brett.' },
-  cable_row:    { name: 'Rudern am Kabel sitzend', sets: 3, lo: 10, hi: 12, kind: 'kg' },
-  face_pull:    { name: 'Face Pulls', sets: 3, lo: 12, hi: 15, kind: 'kg' },
-  biceps_curl:  { name: 'Bizeps-Curls', sets: 2, lo: 10, hi: 12, kind: 'kg' },
-  dead_bug:     { name: 'Dead Bug', sets: 3, lo: 8, hi: 8, kind: 'bw', side: true },
-  box_squat:    { name: 'Kniebeuge auf Kasten mit Kurzhantel', sets: 3, lo: 8, hi: 12, kind: 'kg', hint: 'Kurzhantel vor der Brust, kontrolliert auf den Kasten setzen.' },
-  hip_thrust:   { name: 'Hip Thrust', sets: 3, lo: 10, hi: 12, kind: 'kg' },
-  leg_curl:     { name: 'Beinbeuger sitzend', sets: 2, lo: 10, hi: 12, kind: 'kg' },
-  calf_raise:   { name: 'Wadenheben', sets: 2, lo: 12, hi: 15, kind: 'kg' },
-  side_plank:   { name: 'Seitstütz', sets: 2, lo: 20, hi: 30, kind: 'sec', side: true },
-  bird_dog:     { name: 'Bird Dog', sets: 2, lo: 8, hi: 8, kind: 'bw', side: true },
-  hanging_knee: { name: 'Knieheben im Hang', sets: 3, lo: 8, hi: 12, kind: 'bw' },
-  farmers_walk: { name: "Farmer's Walk", sets: 3, lo: 30, hi: 30, kind: 'dist' },
-  pallof_press: { name: 'Pallof Press', sets: 2, lo: 10, hi: 10, kind: 'kg', side: true },
-  glute_bridge_sl: { name: 'Glute Bridge einbeinig', sets: 2, lo: 10, hi: 10, kind: 'bw', side: true, sideWord: 'pro Bein' },
+  incline_db:   { name: 'Schrägbankdrücken Kurzhantel', sets: 3, lo: 8, hi: 12, kind: 'kg', group: 'push', loads: ['shoulder'] },
+  chest_press:  { name: 'Brustpresse Maschine', sets: 3, lo: 10, hi: 12, kind: 'kg', group: 'push', loads: ['shoulder'] },
+  lateral_raise:{ name: 'Seitheben leicht', sets: 2, lo: 12, hi: 15, kind: 'kg', group: 'shoulders', loads: ['shoulder'] },
+  triceps_cable:{ name: 'Trizepsdrücken Kabel', sets: 2, lo: 10, hi: 12, kind: 'kg', group: 'arms', loads: [] },
+  plank:        { name: 'Plank', sets: 3, lo: 30, hi: 45, kind: 'sec', group: 'core', loads: [] },
+  inverted_row: { name: 'Rudern im Hang', sets: 3, lo: 8, hi: 12, kind: 'bw', hint: 'An der Stange oder im Smith-Rack, Körper gerade wie ein Brett.', group: 'pull', loads: ['shoulder'] },
+  cable_row:    { name: 'Rudern am Kabel sitzend', sets: 3, lo: 10, hi: 12, kind: 'kg', group: 'pull', loads: ['shoulder'] },
+  face_pull:    { name: 'Face Pulls', sets: 3, lo: 12, hi: 15, kind: 'kg', group: 'pull', loads: ['shoulder'] },
+  biceps_curl:  { name: 'Bizeps-Curls', sets: 2, lo: 10, hi: 12, kind: 'kg', group: 'arms', loads: [] },
+  dead_bug:     { name: 'Dead Bug', sets: 3, lo: 8, hi: 8, kind: 'bw', side: true, group: 'core', loads: [] },
+  box_squat:    { name: 'Kniebeuge auf Kasten mit Kurzhantel', sets: 3, lo: 8, hi: 12, kind: 'kg', hint: 'Kurzhantel vor der Brust, kontrolliert auf den Kasten setzen.', group: 'legs', loads: ['knee', 'back'] },
+  hip_thrust:   { name: 'Hip Thrust', sets: 3, lo: 10, hi: 12, kind: 'kg', group: 'legs', loads: [] },
+  leg_curl:     { name: 'Beinbeuger sitzend', sets: 2, lo: 10, hi: 12, kind: 'kg', group: 'legs', loads: ['knee'] },
+  calf_raise:   { name: 'Wadenheben', sets: 2, lo: 12, hi: 15, kind: 'kg', group: 'legs', loads: [] },
+  side_plank:   { name: 'Seitstütz', sets: 2, lo: 20, hi: 30, kind: 'sec', side: true, group: 'core', loads: ['shoulder'] },
+  bird_dog:     { name: 'Bird Dog', sets: 2, lo: 8, hi: 8, kind: 'bw', side: true, group: 'core', loads: [] },
+  hanging_knee: { name: 'Knieheben im Hang', sets: 3, lo: 8, hi: 12, kind: 'bw', group: 'core', loads: ['shoulder'] },
+  farmers_walk: { name: "Farmer's Walk", sets: 3, lo: 30, hi: 30, kind: 'dist', group: 'carry', loads: ['shoulder'] },
+  pallof_press: { name: 'Pallof Press', sets: 2, lo: 10, hi: 10, kind: 'kg', side: true, group: 'core', loads: [] },
+  mcgill_curlup: { name: 'Curl-up (McGill)', sets: 3, lo: 6, hi: 10, kind: 'bw', hint: 'Ein Bein angewinkelt, Hände unter dem unteren Rücken, Kopf und Schultern nur leicht anheben, kurz halten.', group: 'core', loads: [] },
+  side_leg_raise: { name: 'Seitliches Beinheben im Liegen', sets: 2, lo: 12, hi: 15, kind: 'bw', side: true, hint: 'Auf der Seite liegen, Kopf auf dem Arm ablegen, oberes Bein gestreckt langsam heben.', group: 'core', loads: [] },
+  glute_bridge: { name: 'Glute Bridge beidbeinig', sets: 3, lo: 12, hi: 15, kind: 'bw', hint: 'Becken langsam heben, oben kurz halten, Rücken nicht ins Hohlkreuz.', group: 'core', loads: [] },
+  back_ext_light: { name: 'Rückenstrecken leicht (Bank)', sets: 2, lo: 10, hi: 12, kind: 'bw', hint: 'Nur bis zur geraden Linie, langsam, ohne Schwung.', group: 'core', loads: ['back'] },
+  glute_bridge_sl: { name: 'Glute Bridge einbeinig', sets: 2, lo: 10, hi: 10, kind: 'bw', side: true, sideWord: 'pro Bein', group: 'legs', loads: [] },
 };
 
 const LADDERS = {
   push: {
-    name: 'Liegestütz-Weg',
+    name: 'Liegestütz-Weg', group: 'push', loads: ['shoulder'],
     stages: [
       { n: 'erhöht an der Bank', sets: 3, lo: 8, hi: 12, kind: 'bw' },
       { n: 'am Boden', sets: 3, lo: 6, hi: 12, kind: 'bw' },
@@ -81,7 +85,7 @@ const LADDERS = {
     ],
   },
   pull: {
-    name: 'Klimmzug-Weg',
+    name: 'Klimmzug-Weg', group: 'pull', loads: ['shoulder'],
     stages: [
       { n: 'Dead Hang', sets: 3, lo: 20, hi: 30, kind: 'sec' },
       { n: 'negative Klimmzüge (langsam runter)', sets: 3, lo: 3, hi: 5, kind: 'bw' },
@@ -112,8 +116,8 @@ const HOME_ITEMS = [
   { id: 'birddog', n: 'Bird Dog, 2×8 pro Seite' },
   { id: 'deadbug', n: 'Dead Bug, 2×8 pro Seite' },
   { id: 'bridge', n: 'Glute Bridge, 2×12' },
-  { id: 'sideknee', n: 'Seitstütz auf den Knien, 2×20 s pro Seite' },
-  { id: 'child', n: 'Kindhaltung, 1 Minute atmen' },
+  { id: 'sideknee', n: 'Seitstütz auf den Knien, 2×20 s pro Seite', loads: ['shoulder'] },
+  { id: 'child', n: 'Kindhaltung, 1 Minute atmen', loads: ['knee'] },
 ];
 
 const TIPS = {
@@ -162,6 +166,13 @@ const JOG_TIPS = [
   'Tempo so, dass du noch reden kannst.',
   'Eine Stufe so oft wiederholen, bis sie leicht fällt. Kein Stress.',
 ];
+
+const REGIONS = [
+  { k: 'shoulder', n: 'Schulter', e: '🔸' },
+  { k: 'knee', n: 'Knie', e: '🔹' },
+  { k: 'back', n: 'Rücken', e: '🔻' },
+];
+const GROUP_NAMES = { push: 'Drücken', pull: 'Ziehen', legs: 'Beine', core: 'Rumpf', arms: 'Arme', shoulders: 'Schultern', carry: 'Tragen' };
 
 const ORTHO_HINT = 'Bis zum Orthopäden-Termin gilt: nur, was schmerzfrei geht. Bei ausstrahlendem Schmerz ins Bein, Kribbeln oder Taubheit sofort aufhören und abklären lassen.';
 

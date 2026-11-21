@@ -4,7 +4,7 @@ Persönliche Wohlfühl- und Alltags-App als **PWA** (installierbare Web-App).
 Im Mittelpunkt steht, wie man sich fühlt und was der Körper leistet, nicht Kalorien oder Aussehen.
 
 - **☀️ Heute**: Begrüßung mit Tagesspruch/Koranvers, 4 Fragen (1–5), Stolz-Moment, „etwas für die Seele“, Wasser mit wachsender Pflanze
-- **🤸 Bewegung**: Gym (A–D, Empfehlung, Auto-Speichern, Satz 1 überträgt sich), Zuhause, Boxen, Joggen (8 Stufen), Schwimmen, Entspannung, Daten vom iPhone (Schritte/Schlaf/Ruhepuls), Wiegen (nur montags), Monats-Rückblick, Import aus der alten App
+- **🤸 Bewegung**: Gym (A–D, Empfehlung, Auto-Speichern, Satz 1 überträgt sich, **„Was zwickt heute?“ mit automatischem Ersatz**, ↔ Ersetzen/Auslassen, **Übersicht für den Orthopäden**), Zuhause, Boxen, Joggen (8 Stufen), Schwimmen, Entspannung, Daten vom iPhone (Schritte/Schlaf/Ruhepuls), Wiegen (nur montags), Monats-Rückblick, Import aus der alten App
 - **🧠 Wissen**: 8 Übungen zum Kopf-Beruhigen (3 davon geführt), Fakt des Tages (KI oder eingebaut)
 - **🍲 Meal Prep**: Gegessen-Checkliste, Wochenplan mit Protein, Prep-Schritte mit Geräten, Einkaufsliste, KI-Wochenplan, Lieblingsgerichte
 

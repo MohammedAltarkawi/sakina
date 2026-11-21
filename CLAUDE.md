@@ -38,11 +38,11 @@ Persönliche Wohlfühl-PWA für **einen** Nutzer (Mohammed). Vanilla HTML/CSS/JS
 ## Datenmodell: App (localStorage, Präfix `gt_`, **nie umbenennen**)
 | Schlüssel | Inhalt |
 |---|---|
-| `d_YYYY-MM-DD` | `{scales:{sleep,energy,body,head}, proud, soul:'yes'\|'no'\|null, soulWhat, water, eaten:{fr,mi,ab,sh}, health:{steps,sleepH,rhr,ts}}` |
-| `a_YYYY-MM-DD` | Array von Aktivitäten: `{type:'gym', unit:'A'..'D', sets:{exId:[{a,b}]}, stages:{push,pull}, feel}` bzw. `{type:'home'\|'box'\|'jog'\|'swim'\|'relax', done, feel, minutes, laps, checks, knee, stage}` |
+| `d_YYYY-MM-DD` | `{scales:{sleep,energy,body,head}, proud, soul:'yes'\|'no'\|null, soulWhat, water, eaten:{fr,mi,ab,sh}, health:{steps,sleepH,rhr,ts}, sore:['shoulder'\|'knee'\|'back']}` |
+| `a_YYYY-MM-DD` | Array von Aktivitäten: `{type:'gym', unit:'A'..'D', sets:{exId:[{a,b}]}, stages:{push,pull}, feel, swaps:{origId:{to,reason,auto}}, skips:{origId:reason}, keep:{origId:true}}` bzw. `{type:'home'\|'box'\|'jog'\|'swim'\|'relax', done, feel, minutes, laps, checks, knee, stage}` |
 | `w_YYYY-MM-DD` | `{kg}` (nur montags) |
 | `k_YYYY-MM-DD` | `{facts:[{topic,title,text,tip}]}` |
-| `plan`, `shop`, `favs`, `notes`, `ladders`, `jog`, `pantry`, `wish`, `homeCustom`, `planHistory` | siehe Namen |
+| `plan`, `shop`, `favs`, `notes`, `ladders`, `jog`, `pantry`, `wish`, `homeCustom`, `planHistory`, `doctorNote` | siehe Namen |
 | `settings` | `{name, theme, provider, model, baseUrl, apiKey, serverToken}`. `apiKey`/`serverToken` kommen **nie** ins Backup. |
 | `srv` | Gerätestatus Server (db/claude erreichbar, Backup), `LOCAL_ONLY` |
 | `syncmeta` | `{t:{key:ms}, dirty:{key:true}, seq, init, last}`, nur lokal |
@@ -53,7 +53,8 @@ Server-geschriebene Dokumente (kommen per Sync aufs Handy): `plan`, `shop`, `pla
 
 ## Datenmodell: Server (SQLite `SAKINA_DATA/sakina.db`)
 - **Katalog:** `exercises` (`category` gym|home, `kind`, `status` active|proposed|archived, `source` seed|claude|user), `ladder_stages`, `units` (A–D, `exercise_ids` JSON), `dishes` (fav, times_planned, last_planned), `meal_plans` (+ `plan_meals`, `prep_steps`, `shopping_items`, `raw`)
-- **Verlauf:** `day_entries`, `activities`, `sets`, `weights`, `facts`, `analyses`, `ai_runs` (Protokoll jedes Claude-Laufs)
+- **Verlauf:** `day_entries`, `activities`, `sets`, `weights`, `facts`, `analyses`, `ai_runs` (Protokoll jedes Claude-Laufs), `complaints` (Beschwerde-Tagebuch: checkin/swap/skip/jog_knee pro Datum + Stelle)
+- **Belastung:** `exercises.loads` (`shoulder,knee,back`, leer = belastet nichts davon, `NULL` = unbekannt → nie als Ersatz), `exercises.muscle_group`. Seed-Tags kommen aus `data.js` (`loads`, `group`), `db.seed_update()` ergänzt sie idempotent bei jedem Start.
 - **Sync:** `docs` (Spiegel aller App-Dokumente mit `updated_at` + `seq`), `meta` (`seq`, `catalog_version`)
 - Neue Spalten/Tabellen nur als **neuer Eintrag in `MIGRATIONS`** (nie alte ändern). Neue Seed-Inhalte für bestehende DBs ebenfalls per Migration (`INSERT OR IGNORE`).
 - Nach Katalog-Änderungen `db.bump_catalog(c)` aufrufen, sonst holt die App den Katalog nicht neu.
@@ -79,6 +80,14 @@ Die Daten liegen auf dem Handy des Nutzers, ein Fehler kann sie zerstören. Desh
 - Barrierefreiheit: große Tipp-Flächen (≥ 44 px), `aria-label`/`aria-pressed`, Dark Mode mitdenken.
 - Privatsphäre: keine externen Skripte, Schriften, Tracker oder CDNs. Über den API-Schlüssel (Handy → Anbieter) gehen nie persönliche Einträge. Claude auf dem Server bekommt für Analysen Tageswerte (Skalen, Wasser, Bewegung, Schritte, Gegessen), aber **keine Stolz-Texte und kein Gewicht**.
 - Neue Übungen von Claude sind immer `proposed` und brauchen die Bestätigung des Nutzers. Verbotene Übungen filtert zusätzlich `FORBIDDEN` in `claude_jobs.py`.
+
+## Schonen & Ersetzen (Gesundheit)
+Vorgeschichte: Meniskus (Knie), Bandscheibe (Rücken), aktuell Schulterbeschwerden.
+- „Was zwickt heute?“ (`d.sore`) → `unitPlan()` ersetzt Übungen, deren `loads` die Stelle treffen, automatisch (gleiche Muskelgruppe, sonst Rumpf). `gymRecommend()` wählt dann die schonendste Einheit.
+- „↔ Ersetzen / auslassen“ pro Übung mit Grund. Sätze werden unter der **Ersatz-ID** gespeichert, die Original-ID steht in `swaps`.
+- „🩺 Für den Orthopäden“: `complaintsReport()`/`complaintsText()` (8 Wochen, lokal berechnet, teilbar).
+- Claude-Übungs-Check bekommt `beschwerden_8_wochen`. Vorschläge müssen `loads` angeben und werden verworfen, wenn sie eine Stelle belasten, die in 4 Wochen an ≥ 2 Tagen gezwickt hat.
+- Neue Übungen immer mit ehrlichem `loads` taggen (lieber eine Stelle zu viel).
 
 ## Release-Checkliste (bei jeder Änderung)
 1. `APP_VERSION` in `app.js` hochzählen (steht unter ⚙️ ganz unten).

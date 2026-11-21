@@ -1,5 +1,5 @@
 /* Sakina – Service Worker (offline) */
-const VERSION = 'sakina-v6';
+const VERSION = 'sakina-v7';
 const FONTS = [
   'amiri-arabic-400-normal', 'amiri-arabic-700-normal', 'amiri-latin-400-normal', 'amiri-latin-700-normal',
   'fraunces-latin-500-normal', 'fraunces-latin-700-normal',
