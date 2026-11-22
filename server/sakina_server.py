@@ -16,7 +16,7 @@ API (alle außer /api/health brauchen den Token, falls gesetzt):
   POST /api/sync                -> Abgleich App <-> Datenbank (siehe sync.py)
   GET  /api/catalog             -> Übungen, Einheiten, Stufen, Gerichte, Pläne aus der DB
   POST /api/catalog/exercise    -> {"id","action":"accept"|"reject"|"remove","unit"}
-  POST /api/ai/start            -> {"job":"plan"|"analysis"|"exercises"|"fact","topic"}
+  POST /api/ai/start            -> {"job":"plan"|"analysis"|"exercises"|"fact"|"dish","topic"|"arg"}
   GET  /api/ai/status           -> laufende Jobs + letzte Läufe
   GET  /api/history/plans       -> alle gespeicherten Wochenpläne (kurz)
   GET  /api/history/plan?id=N   -> ein Wochenplan komplett
@@ -196,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         job = data.get("job")
         if not claude_jobs.claude_available():
             return self._json(503, {"error": "claude ist auf dem Server nicht verfügbar"})
-        claude_jobs.start_job_async(job, "app", data.get("topic"))
+        claude_jobs.start_job_async(job, "app", data.get("arg") if data.get("arg") is not None else data.get("topic"))
         self._json(202, {"ok": True, "running": claude_jobs.running_jobs()})
 
     def _post_backup(self, data):

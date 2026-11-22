@@ -93,6 +93,10 @@ MIGRATIONS = [
       exercise_id TEXT, replacement_id TEXT, source TEXT NOT NULL);
     CREATE INDEX complaints_date ON complaints(date);
     """,
+    # v3: Gerichte, die er nicht mag (beim Austauschen markiert)
+    """
+    ALTER TABLE dishes ADD COLUMN disliked INTEGER DEFAULT 0;
+    """,
 ]
 
 

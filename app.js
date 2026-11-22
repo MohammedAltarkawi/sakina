@@ -1,7 +1,7 @@
 'use strict';
 /* Sakina – App-Logik */
 
-const APP_VERSION = 'v6 · Schonen & Ersetzen';
+const APP_VERSION = 'v7 · Gerichte einzeln tauschen';
 
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -825,8 +825,8 @@ function closeOverlay() {
 const proteinOf = m => num(String(m.protein ?? '').match(/\d+(?:[.,]\d+)?/)?.[0]) || 0;
 function renderMeal() {
   const plan = db.get('plan') || START_PLAN, doc = dayDoc(), favs = db.get('favs', []), shop = db.get('shop', { checked: {} });
-  let h = `<section class="card"><h3>Heute gegessen?</h3><p class="muted small">Zum Abhaken, damit nichts untergeht.</p><ul class="checks">${EAT.map(e =>
-    `<li><label class="check"><input type="checkbox" data-act="eat" data-k="${e.k}" ${doc.eaten[e.k] ? 'checked' : ''}><span>${e.e} ${e.n} <span class="muted">${e.t}</span></span></label></li>`).join('')}</ul></section>`;
+  // „Heute gegessen?“ zum Abhaken wurde auf Wunsch entfernt (alte Einträge bleiben in den Daten).
+  let h = '';
 
   const sum = plan.meals.reduce((n, m) => n + proteinOf(m), 0);
   const valid = plan.validFrom && plan.validFrom > today() ? `<p class="badge">Gilt ab ${fmtShort(plan.validFrom)}</p>` : '';
@@ -838,7 +838,8 @@ function renderMeal() {
     const isFav = dish && favs.includes(dish);
     h += `<div class="meal"><div class="meal-head"><b>${slotIcon} ${esc(m.slot)}</b><span class="muted small">${esc(m.time || '')}</span>
       ${dish ? `<button class="star ${isFav ? 'on' : ''}" data-act="fav" data-n="${esc(dish)}" aria-pressed="${!!isFav}" aria-label="${isFav ? 'Aus Lieblingsgerichten entfernen' : 'Als Lieblingsgericht merken'}">${isFav ? '★' : '☆'}</button>` : ''}</div>
-      <p>${esc(m.what)}</p>${proteinOf(m) ? `<p class="protein">💪 ca. ${proteinOf(m)} g Protein</p>` : ''}</div>`;
+      <p>${esc(m.what)}</p>${proteinOf(m) ? `<p class="protein">💪 ca. ${proteinOf(m)} g Protein</p>` : ''}
+      ${favIdx >= 0 ? dishSwapUI(favIdx, dish, favs) : ''}</div>`;
   });
   h += `<p class="protein-sum">Zusammen am Tag: 💪 ca. ${sum} g Protein</p>`;
   if (plan.fruit) h += `<p class="info">🍓 ${esc(plan.fruit)}</p>`;
@@ -861,6 +862,24 @@ function renderMeal() {
   h += `<section class="card"><h3>Lieblingsgerichte ★</h3>${favs.length ? `<ul class="favs">${favs.map(f =>
     `<li><span>★ ${esc(f)}</span><button class="x" data-act="favDel" data-n="${esc(f)}" aria-label="${esc(f)} entfernen">✕</button></li>`).join('')}</ul><p class="small muted">Fließen ab und zu in neue Pläne ein.</p>` : '<p class="muted">Tipp auf ☆ bei Mittag oder Abend, um ein Gericht zu merken.</p>'}</section>`;
   return h;
+}
+
+/* Ein einzelnes Gericht austauschen (Claude auf dem Server). Das andere bleibt. */
+function dishSwapUI(idx, dish, favs) {
+  if (!serverHasClaude()) return '';
+  const slot = idx === 0 ? 'mittag' : 'abend';
+  if (S.jobs.dish && S.dishSwap === idx) return `<p class="loading">Claude sucht ein neues ${idx === 0 ? 'Mittag' : 'Abend'}-Gericht, das zu deinem anderen passt … (bis zu 2 Min)</p>`;
+  if (S.dishSwap !== idx) return `<button class="link-btn" data-act="dishSwapOpen" data-i="${idx}" ${S.jobs.dish ? 'disabled' : ''}>🔄 Anderes Gericht</button>`;
+  const reason = S.dishReason || 'other';
+  const otherFavs = favs.filter(f => f !== dish).slice(0, 6);
+  return `<div class="picker"><p class="small"><b>Warum raus?</b></p><div class="chips">
+      <button class="chip ${reason === 'other' ? 'on' : ''}" data-act="dishReason" data-r="other" aria-pressed="${reason === 'other'}">Lust auf was anderes</button>
+      <button class="chip ${reason === 'dislike' ? 'on' : ''}" data-act="dishReason" data-r="dislike" aria-pressed="${reason === 'dislike'}">Mag ich nicht</button></div>
+    ${reason === 'dislike' ? '<p class="small muted">Dann schlägt Claude es nicht wieder vor.</p>' : ''}
+    <label class="lbl small">Worauf hast du Lust? <span class="muted">(optional)</span><input type="text" id="dishWish" placeholder="z. B. was mit Kartoffeln, oder: Linsen-Curry"></label>
+    ${otherFavs.length ? `<p class="small muted">Oder ein Lieblingsgericht:</p><div class="chips">${otherFavs.map(f => `<button class="chip" data-act="dishFav" data-n="${esc(f)}">★ ${esc(f)}</button>`).join('')}</div>` : ''}
+    <div class="row"><button class="btn primary small" data-act="dishSwapGo" data-slot="${slot}">Neues Gericht holen</button><button class="link-btn" data-act="dishSwapClose">Abbrechen</button></div>
+    <p class="small muted">Das andere Gericht bleibt. Prep-Schritte und Einkaufsliste werden passend neu gemacht, schon Abgehaktes bleibt abgehakt.</p></div>`;
 }
 
 function normalizePlan(j) {
@@ -1132,6 +1151,16 @@ const ACT = {
   fav(b) { const f = db.get('favs', []), n = b.dataset.n, i = f.indexOf(n); if (i >= 0) f.splice(i, 1); else f.push(n); db.set('favs', f); render(); },
   favDel(b) { db.set('favs', db.get('favs', []).filter(x => x !== b.dataset.n)); render(); },
   newPlan() { generatePlan(); },
+  dishSwapOpen(b) { S.dishSwap = +b.dataset.i; S.dishReason = 'other'; render(); setTimeout(() => $('#dishWish')?.focus(), 30); },
+  dishSwapClose() { S.dishSwap = null; render(); },
+  dishReason(b) { const w = $('#dishWish')?.value || ''; S.dishReason = b.dataset.r; render(); const el = $('#dishWish'); if (el) el.value = w; },
+  dishFav(b) { const el = $('#dishWish'); if (el) el.value = 'Nimm genau dieses Gericht: ' + b.dataset.n; },
+  async dishSwapGo(b) {
+    const wish = $('#dishWish')?.value.trim() || '', slot = b.dataset.slot;
+    const ok = await runServerJob('dish', { arg: { slot, reason: S.dishReason || 'other', wish } });
+    if (ok) S.dishSwap = null;
+    render();
+  },
   async shareReport() {
     flushAll();
     const text = complaintsText(complaintsReport());

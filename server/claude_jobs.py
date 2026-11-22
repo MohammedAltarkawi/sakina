@@ -31,7 +31,7 @@ import sync  # noqa: E402
 HERE = Path(__file__).resolve().parent
 PROMPTS = HERE / "prompts"
 TIMEOUT = int(os.environ.get("SAKINA_CLAUDE_TIMEOUT", "300"))
-JOBS = ("plan", "analysis", "exercises", "fact")
+JOBS = ("plan", "analysis", "exercises", "fact", "dish")
 TOPICS = {"darm": "Darm", "haut": "Haut", "stress": "Stress", "schlaf": "Schlaf", "immun": "Immunsystem",
           "muskeln": "Muskeln & Erholung", "essen": "Essen", "haus": "Hausmittel", "kopf": "Kopf & Entspannung"}
 _running = set()
@@ -155,8 +155,8 @@ def job_plan(trigger="app"):
     recent = rows("SELECT title, created_on FROM meal_plans ORDER BY id DESC LIMIT 6")
     recent_dishes = [r["name"] for r in rows("SELECT name FROM dishes WHERE last_planned IS NOT NULL ORDER BY last_planned DESC LIMIT 12")]
     favs = [r["name"] for r in rows("SELECT name FROM dishes WHERE fav=1")]
+    disliked = [r["name"] for r in rows("SELECT name FROM dishes WHERE disliked>0")]
     since = iso(t - dt.timedelta(days=14))
-    eaten = rows("SELECT SUM(eaten_fr) fr, SUM(eaten_mi) mi, SUM(eaten_ab) ab, SUM(eaten_sh) sh, COUNT(*) tage FROM day_entries WHERE date>=?", since)[0]
     gym_days = rows("SELECT COUNT(DISTINCT date) n FROM activities WHERE type='gym' AND done=1 AND date>=?", since)[0]["n"]
     pantry, wish = sync.get_doc("pantry", "") or "", sync.get_doc("wish", "") or ""
     use_fav = bool(favs) and t.toordinal() % 3 == 0
@@ -166,8 +166,8 @@ Letzte Pläne: {'; '.join(r['title'] for r in recent) or 'keine'}
 Lieblingsgerichte: {'; '.join(favs) or 'noch keine'}. {'Bau diesmal eins davon ein, gern leicht abgewandelt.' if use_fav else 'Diesmal lieber neue Gerichte; die Lieblingsgerichte zeigen nur, was ihm schmeckt.'}
 Was noch zuhause ist (verbrauchen, NICHT auf die Einkaufsliste): {pantry.strip() or 'nichts angegeben'}
 Worauf er Lust hat: {wish.strip() or 'keine Vorgabe'}
-Verlauf letzte 14 Tage (nur zur Orientierung): {eaten.get('tage') or 0} Tage eingetragen; gegessen: Frühstück {eaten.get('fr') or 0}×, Mittag {eaten.get('mi') or 0}×, Abend {eaten.get('ab') or 0}×, Shake {eaten.get('sh') or 0}×; Gym-Tage: {gym_days}.
-Wenn eine Mahlzeit oft ausgelassen wurde, mach sie besonders einfach."""
+Gerichte, die er NICHT mag (nie wieder vorschlagen, auch nicht ähnlich): {'; '.join(disliked) or 'keine'}
+Gym-Tage in den letzten 14 Tagen: {gym_days}."""
     p = normalize_plan(run_claude(prompt("plan"), user))
     p.update({"created": iso(t), "validFrom": iso(valid_from), "source": "claude"})
     with db.tx() as c:
@@ -179,6 +179,82 @@ Wenn eine Mahlzeit oft ausgelassen wurde, mach sie besonders einfach."""
         hist.append({"date": iso(t), "title": p["title"], "dishes": p["dishes"], "dbId": pid})
         sync.put_doc(c, "planHistory", hist[-20:])
     return f"plan:{pid}"
+
+
+# ------------------------------------------------------------------ Job: ein Gericht austauschen
+def job_dish(trigger="app", arg=None):
+    """Tauscht NUR das Mittag- oder Abendgericht aus. Das andere bleibt, Prep und Einkauf werden neu gemacht."""
+    arg = arg if isinstance(arg, dict) else {}
+    slot = "abend" if str(arg.get("slot", "")).lower().startswith("abend") else "mittag"
+    swap_i, keep_i = (0, 1) if slot == "mittag" else (1, 0)
+    cur = sync.get_doc("plan")
+    if not isinstance(cur, dict) or not isinstance(cur.get("meals"), list):
+        raise JobError("Es gibt noch keinen Wochenplan zum Anpassen")
+    old_dishes = (cur.get("dishes") or []) + ["", ""]
+    meal_idx = {k: i for i, m in enumerate(cur["meals"]) for k in ("mittag", "abend") if re.search(k, m.get("slot", ""), re.I)}
+    if "mittag" not in meal_idx or "abend" not in meal_idx:
+        raise JobError("Plan hat kein Mittag/Abend")
+    keep_slot = "abend" if slot == "mittag" else "mittag"
+    keep_meal = cur["meals"][meal_idx[keep_slot]]
+    old_name, keep_name = old_dishes[swap_i] or cur["meals"][meal_idx[slot]].get("what", ""), old_dishes[keep_i] or keep_meal.get("what", "")
+    reason = arg.get("reason")
+    wish = str(arg.get("wish") or "").strip()[:300]
+    pantry = sync.get_doc("pantry", "") or ""
+    favs = [r["name"] for r in rows("SELECT name FROM dishes WHERE fav=1")]
+    disliked = [r["name"] for r in rows("SELECT name FROM dishes WHERE disliked>0")]
+    recent = [r["name"] for r in rows("SELECT name FROM dishes WHERE last_planned IS NOT NULL ORDER BY last_planned DESC LIMIT 10")]
+    label = "Mittag" if slot == "mittag" else "Abend"
+    user = f"""Der aktuelle Wochenplan soll angepasst werden. Tausche NUR das {label}-Gericht aus.
+
+BLEIBT GENAU SO (nicht ändern): {('Mittag' if keep_slot == 'mittag' else 'Abend')}: „{keep_name}“ – {keep_meal.get('what', '')}
+Frühstück und Shake bleiben wie bisher:
+{json.dumps([m for i, m in enumerate(cur['meals']) if i not in meal_idx.values()], ensure_ascii=False)}
+
+RAUS: „{old_name}“{' (er mag es nicht)' if reason == 'dislike' else ' (er hat Lust auf etwas anderes)'}.
+Das neue {label}-Gericht soll gut zum bleibenden Gericht passen: andere Beilage und möglichst andere Proteinquelle, damit die Woche abwechslungsreich ist.
+Sein Wunsch für das neue Gericht: {wish or 'keine Vorgabe'}
+Nicht nehmen: {'; '.join([old_name] + disliked) or '–'}
+Zuletzt gekocht (lieber nicht): {'; '.join(recent) or '–'}
+Lieblingsgerichte (zur Orientierung): {'; '.join(favs) or '–'}
+Was noch zuhause ist (verbrauchen, nicht einkaufen): {pantry.strip() or 'nichts angegeben'}
+
+Schreib die Prep-Schritte und die Einkaufsliste KOMPLETT NEU für beide Prep-Gerichte zusammen (+ Frühstück/Shake-Zutaten), mit denselben Küchen-Regeln (nie mehr Geräte gleichzeitig, als da sind). Gib den ganzen Plan im bekannten JSON-Format zurück; in "dishes" steht an Position {'1' if slot == 'mittag' else '2'} das neue Gericht."""
+    p = normalize_plan(run_claude(prompt("plan"), user))
+    # Das bleibende Gericht und Frühstück/Shake sicherheitshalber exakt übernehmen
+    new_idx = {k: i for i, m in enumerate(p["meals"]) for k in ("mittag", "abend") if re.search(k, m.get("slot", ""), re.I)}
+    if "mittag" not in new_idx or "abend" not in new_idx:
+        raise JobError("Antwort hat kein Mittag/Abend")
+    p["meals"][new_idx[keep_slot]] = dict(keep_meal)
+    for i, m in enumerate(cur["meals"]):
+        if i not in meal_idx.values():
+            j = next((k for k, n in enumerate(p["meals"]) if n.get("slot") == m.get("slot")), None)
+            if j is not None:
+                p["meals"][j] = dict(m)
+    new_name = p["dishes"][swap_i] if len(p["dishes"]) > swap_i else p["meals"][new_idx[slot]]["what"]
+    if new_name.strip().lower() == old_name.strip().lower():
+        raise JobError("Claude hat dasselbe Gericht nochmal vorgeschlagen")
+    dishes = ["", ""]
+    dishes[keep_i], dishes[swap_i] = keep_name, new_name
+    p["dishes"] = dishes
+    p["title"] = f"{dishes[0]} & {dishes[1]}"
+    p.update({"created": cur.get("created") or iso(today()), "validFrom": cur.get("validFrom"), "source": "claude", "revisedOf": cur.get("dbId")})
+    with db.tx() as c:
+        if reason == "dislike" and old_name:
+            c.execute("INSERT INTO dishes(name,disliked,source,created_at) VALUES(?,1,'user',?) ON CONFLICT(name) DO UPDATE SET disliked=1, fav=0",
+                      (old_name, db.now_ms()))
+        pid = sync.store_plan(c, p, "claude", pantry=pantry, wish=wish)
+        p["dbId"] = pid
+        sync.put_doc(c, "plan", p)
+        # schon abgehakte Einkäufe behalten, wenn sie noch auf der Liste stehen
+        old_checked = (sync.get_doc("shop", {}) or {}).get("checked", {}) or {}
+        still = {f"{g}|{it}" for g, items in p["shop"].items() for it in items}
+        sync.put_doc(c, "shop", {"checked": {k: v for k, v in old_checked.items() if k in still}})
+        hist = sync.get_doc("planHistory", []) or []
+        hist.append({"date": iso(today()), "title": p["title"], "dishes": p["dishes"], "dbId": pid, "revised": True})
+        sync.put_doc(c, "planHistory", hist[-20:])
+        if reason == "dislike":
+            sync.put_doc(c, "favs", [f for f in (sync.get_doc("favs", []) or []) if f != old_name])
+    return f"dish:{pid}"
 
 
 def normalize_plan(j):
@@ -206,7 +282,7 @@ def job_analysis(trigger="app"):
     t = today()
     frm, to = t - dt.timedelta(days=6), t
     days = rows("""SELECT date, sleep schlaf, energy energie, body koerper, head kopf, water wasser_glaeser, soul seele,
-                   eaten_fr fruehstueck, eaten_mi mittag, eaten_ab abend, eaten_sh shake, steps schritte, sleep_h schlaf_h, rhr ruhepuls
+                   steps schritte, sleep_h schlaf_h, rhr ruhepuls
                    FROM day_entries WHERE date BETWEEN ? AND ? ORDER BY date""", iso(frm), iso(to))
     acts = rows("SELECT date, type art, unit einheit, feel koerpergefuehl, minutes minuten, knee knie, stage stufe FROM activities WHERE done=1 AND date BETWEEN ? AND ? ORDER BY date", iso(frm), iso(to))
     data = {"zeitraum": f"{frm.strftime('%d.%m.')}–{to.strftime('%d.%m.%Y')}", "tage": days, "bewegung": acts,
@@ -361,8 +437,8 @@ def run_job(job, trigger="app", arg=None, reserved=False):
     with db.tx() as c:
         rid = c.execute("INSERT INTO ai_runs(job,trigger,status,started_at) VALUES(?,?,'running',?)", (job, trigger, db.now_ms())).lastrowid
     try:
-        fn = {"plan": job_plan, "analysis": job_analysis, "exercises": job_exercises, "fact": job_fact}[job]
-        ref = fn(trigger, arg) if job == "fact" else fn(trigger)
+        fn = {"plan": job_plan, "analysis": job_analysis, "exercises": job_exercises, "fact": job_fact, "dish": job_dish}[job]
+        ref = fn(trigger, arg) if job in ("fact", "dish") else fn(trigger)
         with db.tx() as c:
             c.execute("UPDATE ai_runs SET status='ok', finished_at=?, result_ref=? WHERE id=?", (db.now_ms(), ref, rid))
         return rid

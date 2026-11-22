@@ -113,7 +113,7 @@ function applyCatalog() {
 
 /* ---------- Claude-Jobs auf dem Server ---------- */
 S.jobs = S.jobs || {};
-const JOB_LABEL = { plan: 'Wochenplan', analysis: 'Wochen-Analyse', exercises: 'Übungs-Check', fact: 'Fakt' };
+const JOB_LABEL = { plan: 'Wochenplan', analysis: 'Wochen-Analyse', exercises: 'Übungs-Check', fact: 'Fakt', dish: 'Neues Gericht' };
 
 async function runServerJob(job, extra = {}) {
   if (S.jobs[job]) return false;

@@ -6,7 +6,7 @@ Im Mittelpunkt steht, wie man sich fühlt und was der Körper leistet, nicht Kal
 - **☀️ Heute**: Begrüßung mit Tagesspruch/Koranvers, 4 Fragen (1–5), Stolz-Moment, „etwas für die Seele“, Wasser mit wachsender Pflanze
 - **🤸 Bewegung**: Gym (A–D, Empfehlung, Auto-Speichern, Satz 1 überträgt sich, **„Was zwickt heute?“ mit automatischem Ersatz**, ↔ Ersetzen/Auslassen, **Übersicht für den Orthopäden**), Zuhause, Boxen, Joggen (8 Stufen), Schwimmen, Entspannung, Daten vom iPhone (Schritte/Schlaf/Ruhepuls), Wiegen (nur montags), Monats-Rückblick, Import aus der alten App
 - **🧠 Wissen**: 8 Übungen zum Kopf-Beruhigen (3 davon geführt), Fakt des Tages (KI oder eingebaut)
-- **🍲 Meal Prep**: Gegessen-Checkliste, Wochenplan mit Protein, Prep-Schritte mit Geräten, Einkaufsliste, KI-Wochenplan, Lieblingsgerichte
+- **🍲 Meal Prep**: Wochenplan mit Protein, **einzelne Gerichte austauschen** (das andere bleibt), Prep-Schritte mit Geräten, Einkaufsliste, KI-Wochenplan, Lieblingsgerichte
 
 Reines HTML/CSS/JavaScript, **kein Build-Schritt, keine Abhängigkeiten**. Der Server braucht nur Python 3 und speichert alles in einer **SQLite-Datenbank**.
 
@@ -15,7 +15,7 @@ Reines HTML/CSS/JavaScript, **kein Build-Schritt, keine Abhängigkeiten**. Der S
 - **Variable Inhalte aus der Datenbank:** Übungen, Gym-Einheiten, Stufen, Zuhause-Liste, Gerichte, Wochenpläne, Analysen, alles mit Datum, damit du den Verlauf siehst.
 - **Claude Code auf dem Server** (dein Abo, kein API-Schlüssel nötig):
   - **Freitag 18 Uhr:** neuer Meal-Prep-Plan aus Verlauf, Vorrat, Wunsch und Lieblingsgerichten
-  - **Sonntag 19 Uhr:** Wochen-Auswertung (Schlaf, Energie, Bewegung, Essen, stärkend, ohne Gewicht)
+  - **Sonntag 19 Uhr:** Wochen-Auswertung (Schlaf, Energie, Bewegung, stärkend, ohne Gewicht)
   - **Am 1. jedes Monats:** Übungs-Check mit Vorschlägen für neue Übungen. Die landen als **Vorschlag**, du bestätigst sie in der App.
   - Alles auch per Knopf in der App. Fakt des Tages kommt ebenfalls von Claude.
 - Claude bekommt dabei **keine Werkzeuge**: Der Server gibt ihm die Daten als Text, prüft die Antwort und schreibt selbst in die Datenbank.

@@ -78,7 +78,7 @@ Die Daten liegen auf dem Handy des Nutzers, ein Fehler kann sie zerstören. Desh
 - Training: rücken-, knie- und schulterschonend. Kein schweres Kniebeugen mit Langhantel, kein klassisches Kreuzheben, kein Drücken über Kopf. Der Orthopäden-Hinweis bleibt unter jedem Plan.
 - Meal-Prep-Schritte dürfen nie mehr Küchengeräte gleichzeitig brauchen, als er hat (siehe `PLAN_SYSTEM`).
 - Barrierefreiheit: große Tipp-Flächen (≥ 44 px), `aria-label`/`aria-pressed`, Dark Mode mitdenken.
-- Privatsphäre: keine externen Skripte, Schriften, Tracker oder CDNs. Über den API-Schlüssel (Handy → Anbieter) gehen nie persönliche Einträge. Claude auf dem Server bekommt für Analysen Tageswerte (Skalen, Wasser, Bewegung, Schritte, Gegessen), aber **keine Stolz-Texte und kein Gewicht**.
+- Privatsphäre: keine externen Skripte, Schriften, Tracker oder CDNs. Über den API-Schlüssel (Handy → Anbieter) gehen nie persönliche Einträge. Claude auf dem Server bekommt für Analysen Tageswerte (Skalen, Wasser, Bewegung, Schritte), aber **keine Stolz-Texte und kein Gewicht**.
 - Neue Übungen von Claude sind immer `proposed` und brauchen die Bestätigung des Nutzers. Verbotene Übungen filtert zusätzlich `FORBIDDEN` in `claude_jobs.py`.
 
 ## Schonen & Ersetzen (Gesundheit)
@@ -88,6 +88,10 @@ Vorgeschichte: Meniskus (Knie), Bandscheibe (Rücken), aktuell Schulterbeschwerd
 - „🩺 Für den Orthopäden“: `complaintsReport()`/`complaintsText()` (8 Wochen, lokal berechnet, teilbar).
 - Claude-Übungs-Check bekommt `beschwerden_8_wochen`. Vorschläge müssen `loads` angeben und werden verworfen, wenn sie eine Stelle belasten, die in 4 Wochen an ≥ 2 Tagen gezwickt hat.
 - Neue Übungen immer mit ehrlichem `loads` taggen (lieber eine Stelle zu viel).
+
+## Meal Prep
+- Kein „Heute gegessen?“-Abhaken mehr (vom Nutzer nicht gewünscht). Das Feld `eaten` bleibt in alten Daten, wird aber nicht mehr angezeigt oder an Claude gegeben.
+- „🔄 Anderes Gericht“ pro Mittag/Abend → Job `dish` (`{slot, reason:'other'|'dislike', wish}`): nur dieses Gericht neu, das andere sowie Frühstück/Shake übernimmt der Server **exakt**, Prep + Einkauf neu, Abgehaktes bleibt. `dislike` setzt `dishes.disliked=1` und streicht es aus den Favoriten. Wochenplan und Tausch bekommen die Liste „mag er nicht“.
 
 ## Release-Checkliste (bei jeder Änderung)
 1. `APP_VERSION` in `app.js` hochzählen (steht unter ⚙️ ganz unten).
