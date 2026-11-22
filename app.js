@@ -1,7 +1,7 @@
 'use strict';
 /* Sakina – App-Logik */
 
-const APP_VERSION = 'v7 · Gerichte einzeln tauschen';
+const APP_VERSION = 'v8 · Health per Kurzbefehl';
 
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -210,8 +210,9 @@ function healthCard() {
     <div class="kacheln"><div><b>${val(hd?.steps, v => v.toLocaleString('de-DE'))}</b><span>Schritte heute</span></div>
     <div><b>${val(hd?.sleepH ?? y?.sleepH, v => fmtNum(v) + ' h')}</b><span>Schlaf${hd?.sleepH == null && y?.sleepH != null ? ' (gestern)' : ''}</span></div>
     <div><b>${val(hd?.rhr, v => v)}</b><span>Ruhepuls</span></div></div>
-    <button class="btn primary wide" data-act="healthPaste">Gesundheitsdaten einfügen</button>
-    ${hd?.ts ? `<p class="small muted center">Zuletzt aktualisiert um ${new Date(hd.ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</p>` : '<p class="small muted center">Erst den Kurzbefehl „Sakina Sync“ ausführen, dann hier tippen.</p>'}
+    ${hd?.ts ? `<p class="small muted center">Zuletzt aktualisiert um ${new Date(hd.ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr${hd.src === 'kurzbefehl' ? ' · automatisch per Kurzbefehl' : ''}</p>`
+      : `<p class="small muted center">${srvInfo().db ? 'Kommt automatisch, sobald dein Kurzbefehl „Sakina Sync“ läuft (Anleitung in der README).' : 'Erst den Kurzbefehl ausführen, dann hier einfügen.'}</p>`}
+    <details class="sub" id="det-healthpaste"><summary class="small">Manuell einfügen</summary><button class="btn wide" data-act="healthPaste">Aus Zwischenablage einfügen</button></details>
     ${S.healthManual ? `<label class="lbl">Klappt das Einfügen nicht? Hier lang drücken → „Einsetzen“:<textarea id="healthText" rows="3" placeholder="SAKINA&#10;schritte=8432&#10;schlaf=7,3&#10;ruhepuls=58"></textarea></label><button class="btn small" data-act="healthManual">Übernehmen</button>` : ''}
   </section>`;
 }

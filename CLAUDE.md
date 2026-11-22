@@ -114,5 +114,5 @@ Vorgeschichte: Meniskus (Knie), Bandscheibe (Rücken), aktuell Schulterbeschwerd
 - Protokoll: Tabelle `ai_runs` bzw. `journalctl -u sakina-job@plan`.
 
 ## Ideen / offene Punkte
-- Kurzbefehl „Sakina Sync“: die deutschen Aktionsnamen in iOS sind nicht ganz sicher. Bei Problemen ein Beispiel vom Nutzer holen.
+- Kurzbefehl „Sakina Sync“ postet an `/api/health-import` (Formular oder JSON: `schritte`, `schlaf`, `ruhepuls`, optional `datum`), Antwort ist Klartext. Der Server schreibt `health` ins Tagesdokument; `apply_sync` mischt `health` bei `d_`-Dokumenten immer nach `health.ts` zusammen, damit App-Änderungen sie nicht überschreiben. Die deutschen iOS-Aktionsnamen in der README sind nicht ganz sicher. Bei Problemen ein Beispiel vom Nutzer holen.
 - Möglich: KI-Anfragen über den eigenen Server leiten (z. B. LiteLLM), damit der Schlüssel nicht im Browser liegt.

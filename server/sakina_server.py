@@ -20,6 +20,7 @@ API (alle außer /api/health brauchen den Token, falls gesetzt):
   GET  /api/ai/status           -> laufende Jobs + letzte Läufe
   GET  /api/history/plans       -> alle gespeicherten Wochenpläne (kurz)
   GET  /api/history/plan?id=N   -> ein Wochenplan komplett
+  POST /api/health-import       -> vom iPhone-Kurzbefehl: schritte, schlaf, ruhepuls (JSON oder Formular), Antwort als Text
   POST /api/backup              -> Backup (JSON aus der App) speichern
   GET  /api/backup/latest       -> neuestes Backup
   GET  /api/backups             -> Liste der Backups
@@ -156,7 +157,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         path = path[path.index("/api/"):] if "/api/" in path else path
         routes = {"/api/backup": self._post_backup, "/api/sync": self._post_sync,
-                  "/api/catalog/exercise": self._post_exercise, "/api/ai/start": self._post_ai}
+                  "/api/catalog/exercise": self._post_exercise, "/api/ai/start": self._post_ai,
+                  "/api/health-import": self._post_health}
         if path not in routes:
             return self._json(404, {"error": "Unbekannt"})
         if not self._authorized():
@@ -164,10 +166,16 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
             return self._json(413, {"error": "Anfrage leer oder zu groß"})
+        raw = self.rfile.read(length)
         try:
-            data = json.loads(self.rfile.read(length))
+            data = json.loads(raw)
         except ValueError:
-            return self._json(400, {"error": "Kein gültiges JSON"})
+            # Kurzbefehle schicken oft Formular-Daten (schritte=…&schlaf=…)
+            form = parse_qs(raw.decode("utf-8", "replace"))
+            if path == "/api/health-import" and form:
+                data = {k: v[0] for k, v in form.items()}
+            else:
+                return self._json(400, {"error": "Kein gültiges JSON"})
         try:
             routes[path](data)
         except claude_jobs.JobError as e:
@@ -176,6 +184,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": str(e).strip("'")})
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": str(e)[:300]})
+
+    def _post_health(self, data):
+        if not isinstance(data, dict):
+            return self._send(400, "Ungültige Daten".encode(), "text/plain; charset=utf-8")
+        try:
+            _, _, text = sync.import_health(data)
+        except ValueError as e:
+            return self._send(400, str(e).encode(), "text/plain; charset=utf-8")
+        self._send(200, text.encode(), "text/plain; charset=utf-8", {"Cache-Control": "no-store"})
 
     def _post_sync(self, data):
         if not isinstance(data, dict):

@@ -115,16 +115,37 @@ Ein reiner Static-Server reicht auch (`python3 -m http.server`). Dann gibt es ab
 
 ---
 
-## Gesundheitsdaten vom iPhone
-Web-Apps dürfen Apple Health nicht direkt lesen. Deshalb gibt es einen Kurzbefehl („Sakina Sync“), der Werte aus Health in die Zwischenablage kopiert, im Format:
+## Gesundheitsdaten vom iPhone (Kurzbefehl „Sakina Sync“)
+Web-Apps dürfen Apple Health nicht lesen. Ein Kurzbefehl schickt die Werte deshalb **direkt an deinen Server** (Tailscale muss an sein). Die App holt sie beim nächsten Abgleich.
+
+**Kurzbefehl anlegen** (Kurzbefehle-App → +, Name „Sakina Sync“). Aktionen über die Suche einfügen, notfalls nach „Health“ suchen:
+
+1. **Health-Messwerte suchen** (*Find Health Samples*): Typ **Schritte**, Startdatum **ist heute**
+2. **Statistik berechnen** (*Calculate Statistics*): **Summe** → umbenennen in „Schritte“
+3. **Health-Messwerte suchen**: Typ **Schlafanalyse**, Startdatum **in den letzten 1 Tagen**; Filter (*alle* Bedingungen): Wert **ist nicht** „Im Bett“, Wert **ist nicht** „Wach“
+4. **Details von Health-Messwerten abrufen**: **Dauer**
+5. **Statistik berechnen**: **Summe** → umbenennen in „Schlaf“
+6. **Health-Messwerte suchen**: Typ **Ruhepuls**, sortieren nach **Startdatum, Neueste zuerst**, **Limit 1**
+7. **Details von Health-Messwerten abrufen**: **Wert** → umbenennen in „Ruhepuls“
+8. **Inhalte von URL abrufen** (*Get Contents of URL*):
+   - URL: `https://kiste.tail0acac6.ts.net:8443/api/health-import`
+   - Methode: **POST**, Anforderungstext: **Formular**
+   - Felder (Text): `schritte` = Schritte, `schlaf` = Schlaf, `ruhepuls` = Ruhepuls
+   - Nur falls `SAKINA_TOKEN` gesetzt ist: Header `X-Sakina-Token` = dein Token
+9. **Mitteilung anzeigen**: *Inhalte von URL*. Der Server antwortet z. B. mit „In Sakina gespeichert ✓ 8.432 Schritte · 7 h 15 min Schlaf · Ruhepuls 58“
+
+Beim ersten Ausführen fragt iOS nach Health-Zugriff → erlauben.
+
+**Automatisch jeden Abend:** Kurzbefehle → **Automation** → **+** → **Tageszeit** 21:30, täglich → **Sofort ausführen** → „Sakina Sync“.
+
+Ohne Server geht es auch per Zwischenablage (Bewegung → „Manuell einfügen“), Format:
 ```
 SAKINA
 schritte=8432
 ruhepuls=58
 schlaf=7,3
 ```
-Optional `datum=2026-11-20`. Schlaf darf in Stunden, Minuten oder Sekunden kommen.
-In der App: **Bewegung → „Gesundheitsdaten einfügen“**.
+Der Server versteht Zahlen wie `8.432`, `58 BPM`, Schlaf als Sekunden, Minuten, Stunden, `7:15` oder `7 Std. 15 Min.`.
 
 ---
 

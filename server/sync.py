@@ -60,7 +60,19 @@ def apply_sync(payload):
             k, v, t = d.get("k"), d.get("v"), int(d.get("t") or 0)
             if not isinstance(k, str) or not KEY_RE.match(k) or k in NOT_SYNCED:
                 continue
-            row = c.execute("SELECT updated_at FROM docs WHERE key=?", (k,)).fetchone()
+            row = c.execute("SELECT updated_at, value, origin FROM docs WHERE key=?", (k,)).fetchone()
+            if k.startswith("d_") and row and isinstance(v, dict) and not (row[2] == "app" and row[0] > t):
+                # Tagesdokument: alles von der App, nur „health“ kann auch vom Server (Kurzbefehl) kommen.
+                srv = json.loads(row[1]) or {}
+                hs, ha = srv.get("health") or {}, v.get("health") or {}
+                merged = dict(v)
+                if hs and (hs.get("ts") or 0) > (ha.get("ts") or 0):
+                    merged["health"] = {**ha, **hs}
+                put_doc(c, k, merged, max(t, row[0]) + (1 if merged != v else 0), origin="app")
+                if merged == v:
+                    sent_keys.add(k)          # App hat schon den vollen Stand
+                accepted += 1
+                continue
             if row and row[0] > t:
                 rejected.append(k)      # Server ist neuer -> App bekommt Server-Stand
                 continue
@@ -76,6 +88,81 @@ def apply_sync(payload):
         out.append({"k": r["key"], "v": json.loads(r["value"]), "t": r["updated_at"]})
     seq = int(db.meta("seq", "0"))
     return {"ok": True, "seq": seq, "accepted": accepted, "docs": out, "catalogVersion": db.meta("catalog_version", "0")}
+
+
+# ------------------------------------------------------------ Gesundheitsdaten vom Kurzbefehl
+def _health_num(v):
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace("\u00a0", " ")
+    s = re.sub(r"(?i)\s*(bpm|count/min|schläge/min|/min|schritte|steps)\s*$", "", s)
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+", s):        # 8.432 -> 8432
+        s = s.replace(".", "")
+    m = re.search(r"-?\d+(?:[.,]\d+)?", s)
+    return float(m.group().replace(",", ".")) if m else None
+
+
+def _sleep_hours(v):
+    """Schlaf kommt aus Kurzbefehle in vielen Formen: 26100 (s), 435 (min), 7,25 (h), '7:15', '7 Std. 15 Min.', '7 hr 15 min'."""
+    if v is None or v == "":
+        return None
+    s = str(v).strip().lower()
+    m = re.fullmatch(r"(\d+):(\d{1,2})(?::(\d{1,2}))?", s)
+    if m:
+        return int(m.group(1)) + int(m.group(2)) / 60
+    h = re.search(r"(\d+(?:[.,]\d+)?)\s*(h|std|hr|hour|stunde)", s)
+    mi = re.search(r"(\d+)\s*(m|min)(?![a-z]*s?ek)", s)
+    if h or mi:
+        return (float(h.group(1).replace(",", ".")) if h else 0) + (int(mi.group(1)) / 60 if mi else 0)
+    n = _health_num(s)
+    if n is None:
+        return None
+    if n > 1440:
+        return n / 3600
+    if n > 24:
+        return n / 60
+    return n
+
+
+def import_health(data):
+    """POST /api/health-import vom iPhone-Kurzbefehl. Schreibt health ins Tagesdokument."""
+    import datetime as _dt
+    get = lambda *ks: next((data[k] for k in ks if k in data and data[k] not in (None, "")), None)
+    date = str(get("datum", "date") or _dt.date.today().isoformat())[:10]
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", date)
+    if m:
+        date = f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise ValueError("Datum ungültig")
+    out = {}
+    steps = _health_num(get("schritte", "steps"))
+    if steps is not None and 0 <= steps < 200000:
+        out["steps"] = int(round(steps))
+    sleep = _sleep_hours(get("schlaf", "sleep"))
+    if sleep is not None and 0 < sleep <= 16:
+        out["sleepH"] = round(sleep, 2)
+    rhr = _health_num(get("ruhepuls", "rhr", "puls"))
+    if rhr is not None and 25 < rhr < 150:
+        out["rhr"] = int(round(rhr))
+    if not out:
+        raise ValueError("Keine Werte erkannt. Felder: schritte, schlaf, ruhepuls")
+    out["ts"] = db.now_ms()
+    out["src"] = "kurzbefehl"
+    with db.tx() as c:
+        doc = get_doc("d_" + date, {}) or {}
+        doc["health"] = {**(doc.get("health") or {}), **out}
+        put_doc(c, "d_" + date, doc)
+    parts = []
+    if "steps" in out:
+        parts.append(f"{out['steps']:,} Schritte".replace(",", "."))
+    if "sleepH" in out:
+        h = out["sleepH"]
+        parts.append(f"{int(h)} h {round((h - int(h)) * 60):02d} min Schlaf")
+    if "rhr" in out:
+        parts.append(f"Ruhepuls {out['rhr']}")
+    return date, out, "In Sakina gespeichert ✓ " + " · ".join(parts)
 
 
 # ------------------------------------------------------------ Normalisierung
