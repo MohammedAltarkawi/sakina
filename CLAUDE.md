@@ -95,7 +95,7 @@ Vorgeschichte: Meniskus (Knie), Bandscheibe (Rücken), aktuell Schulterbeschwerd
 3. `node --check app.js data.js sw.js` und `python3 -m py_compile server/sakina_server.py`.
 4. Lokal testen: `SAKINA_DATA=./data python3 server/sakina_server.py` und im Browser (Handy-Breite ~400 px, hell + dunkel) durchklicken. Mit Playwright: Konsole auf Fehler prüfen. Claude-Jobs ohne echtes Claude testen: `SAKINA_CLAUDE=/pfad/zu/fake-claude` (ein Skript, das `{"result":"<json>"}` ausgibt). Offline testen: `/api/**` blockieren, App muss weiterlaufen und danach nachsynchronisieren.
    Wenn `data.js` (Übungen, Startplan, Prompts) geändert wurde: `node tools/export_seed.js`.
-5. Commit auf `main` und pushen. Der Server holt es innerhalb von 2 Minuten (`sakina-update.timer`). Auf dem iPhone die App 1–2× schließen und neu öffnen.
+5. Commit auf `main` und pushen. Der Server holt es innerhalb einer Stunde (`sakina-update.timer`), sofort mit `sudo systemctl start sakina-update`. Auf dem iPhone die App 1–2× schließen und neu öffnen.
 
 ## Server-Hinweise
 - Läuft hinter `tailscale serve --https=8443` auf `127.0.0.1:8787`. Port 443 gehört Open WebUI, nie überschreiben. **Nicht** öffentlich machen (kein Tailscale Funnel), ohne vorher `SAKINA_TOKEN` zu setzen.

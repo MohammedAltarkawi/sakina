@@ -3,7 +3,7 @@
 # Aufruf (im Repo-Ordner):   ./deploy/install.sh
 # Danach läuft:
 #   - sakina.service          (der kleine Server, startet automatisch)
-#   - sakina-update.timer     (holt alle 2 Minuten neue Versionen von GitHub)
+#   - sakina-update.timer     (holt regelmäßig neue Versionen von GitHub, Standard 1 h)
 #   - tailscale serve         (HTTPS-Adresse nur für deine Geräte)
 set -euo pipefail
 
@@ -76,7 +76,10 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 
-say "Automatische Updates (sakina-update.timer)"
+# Update-Intervall: Umgebungsvariable > bereits eingestellter Wert > 1 Stunde
+UPDATE_EVERY="${SAKINA_UPDATE_EVERY:-$(sed -n 's/^OnUnitActiveSec=//p' /etc/systemd/system/sakina-update.timer 2>/dev/null)}"
+UPDATE_EVERY="${UPDATE_EVERY:-1h}"
+say "Automatische Updates (sakina-update.timer, alle $UPDATE_EVERY)"
 sudo tee /etc/systemd/system/sakina-update.service >/dev/null <<UNIT
 [Unit]
 Description=Sakina von GitHub aktualisieren
@@ -88,11 +91,11 @@ ExecStart=$APP_DIR/deploy/update.sh
 UNIT
 sudo tee /etc/systemd/system/sakina-update.timer >/dev/null <<UNIT
 [Unit]
-Description=Sakina alle 2 Minuten aktualisieren
+Description=Sakina regelmäßig aktualisieren
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=2min
+OnUnitActiveSec=$UPDATE_EVERY
 
 [Install]
 WantedBy=timers.target

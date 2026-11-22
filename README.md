@@ -41,7 +41,7 @@ Reines HTML/CSS/JavaScript, **kein Build-Schritt, keine Abhängigkeiten**. Der S
 
 ## Auf dem eigenen Server betreiben (Ubuntu + Tailscale)
 
-Ergebnis: Die App läuft unter einer HTTPS-Adresse wie `https://server.tailXXXX.ts.net`, die **nur deine eigenen Geräte** erreichen. Neue Versionen aus GitHub kommen automatisch, und deine Daten werden automatisch auf den Server gesichert.
+Ergebnis: Die App läuft unter einer HTTPS-Adresse wie `https://server.tailXXXX.ts.net`, die **nur deine eigenen Geräte** erreichen. Neue Versionen aus GitHub kommen automatisch (stündlich), und deine Daten werden automatisch auf den Server gesichert.
 
 ### 1. Vorbereiten (einmalig)
 - Tailscale läuft auf dem Server und auf dem iPhone.
@@ -73,7 +73,7 @@ cd /srv/sakina && ./deploy/install.sh
 ```
 Das Skript richtet ein:
 - `sakina.service`: der Server (`server/sakina_server.py`) auf `127.0.0.1:8787`, startet automatisch
-- `sakina-update.timer`: holt alle 2 Minuten Neues von GitHub (`deploy/update.sh`)
+- `sakina-update.timer`: holt jede Stunde Neues von GitHub (`deploy/update.sh`); sofort: `sudo systemctl start sakina-update`
 - `sakina-job-plan/analysis/exercises.timer`: Claude-Jobs (Fr, So, monatlich)
 - `tailscale serve`: HTTPS nur im eigenen Tailnet, auf **Port 8443** (`https://deine-kiste.….ts.net:8443`). Andere Dienste auf 443, z. B. Open WebUI, bleiben unangetastet. Anderer Port: `SAKINA_HTTPS_PORT=9443 ./deploy/install.sh`
 - `/etc/sakina.env`: Einstellungen (Port, Datenordner, optional Token)
